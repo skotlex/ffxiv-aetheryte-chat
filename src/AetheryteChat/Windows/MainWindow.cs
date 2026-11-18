@@ -21,6 +21,7 @@ internal sealed class MainWindow : Window
     private readonly ChannelColors _channelColors = new(Plugin.GameConfig);
     private readonly WindowStyles _windowStyles = new();
     private StyleModel? _pushedStyle; // PreDraw 에서 push 한 스타일 — PostDraw 에서 같은 것을 pop 한다
+    private bool _pushedBackground;   // PreDraw 에서 배경색을 push 했는지
 
     // 보내기 탭 상태. 번역·전송 결과는 백그라운드에서 채워진다 (문자열 대입이라 UI 스레드에서 읽어도 안전)
     private string _koreanInput = "";
@@ -54,10 +55,23 @@ internal sealed class MainWindow : Window
         // 창을 닫은(End) 뒤 PostDraw 를 부르므로 여기서 push 하고 PostDraw 에서 pop 하면 이 창만 감싼다 (WindowHost.cs)
         _pushedStyle = _windowStyles.Find(_plugin.Configuration.WindowStyleName);
         _pushedStyle?.Push();
+
+        // 배경색은 고른 스타일 위에 덮는다. 알파는 스타일 값을 두고 BgAlpha(배경 불투명도)가 다시 정한다
+        if (_plugin.Configuration.BackgroundColor is { } rgb)
+        {
+            var alpha = ImGui.GetStyle().Colors[(int)ImGuiCol.WindowBg].W;
+            ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(rgb, alpha));
+            _pushedBackground = true;
+        }
     }
 
     public override void PostDraw()
     {
+        if (_pushedBackground)
+        {
+            ImGui.PopStyleColor();
+            _pushedBackground = false;
+        }
         _pushedStyle?.Pop();
         _pushedStyle = null;
     }
@@ -414,6 +428,28 @@ internal sealed class MainWindow : Window
         WrappedText.Draw(
             "이 창에만 적용된다. 버튼을 눌러 Look & Feel 탭의 'Open Style Editor' 로 스타일을 만들어 저장한 뒤 여기서 고른다.",
             DimColor);
+
+        ImGuiHelpers.ScaledDummy(8);
+
+        ImGui.TextUnformatted("배경 색");
+        // 지정하지 않았으면 지금 스타일의 배경색에서 시작한다 (Draw 안이라 고른 스타일이 이미 적용돼 있다)
+        var styleBg = ImGui.GetStyle().Colors[(int)ImGuiCol.WindowBg];
+        var color = config.BackgroundColor ?? new Vector3(styleBg.X, styleBg.Y, styleBg.Z);
+        if (ImGui.ColorEdit3("##bgColor", ref color, ImGuiColorEditFlags.NoInputs))
+            config.BackgroundColor = color;
+        if (ImGui.IsItemDeactivatedAfterEdit())
+            config.Save();
+        ImGui.SameLine();
+        using (ImRaii.Disabled(config.BackgroundColor is null))
+        {
+            if (ImGui.Button("초기화##bgColor"))
+            {
+                config.BackgroundColor = null;
+                config.Save();
+            }
+        }
+        ImGui.SameLine();
+        ImGui.TextColored(DimColor, config.BackgroundColor is null ? "스타일의 배경색" : "이 창에만 적용");
 
         ImGuiHelpers.ScaledDummy(8);
 

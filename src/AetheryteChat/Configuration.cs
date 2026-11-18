@@ -24,6 +24,12 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public float? BackgroundOpacity { get; set; }
 
+    /// <summary>
+    /// 이 창 배경의 색(RGB 0~1). null 이면 스타일의 배경색. 투명도는 <see cref="BackgroundOpacity"/> 가 맡는다.
+    /// Dalamud 스타일에는 저장되지 않고 이 플러그인 창에만 적용된다
+    /// </summary>
+    public System.Numerics.Vector3? BackgroundColor { get; set; }
+
     /// <summary>이 창에만 적용할 Dalamud 스타일 이름 (스타일 편집기에서 저장한 것 또는 내장). null 이면 Dalamud 설정을 따른다</summary>
     public string? WindowStyleName { get; set; }
 
