@@ -29,10 +29,13 @@ internal sealed partial class TranslationQueue : IDisposable
     private const int MaxRememberedSent = 20;
     private readonly OrderedDictionary<string, string> _sent = new(); // 보낸 일본어 → 한국어 원문
 
+    // 지금 엔진의 로그인 확인 — 엔진을 바꾼 직후의 다시 번역이 확인이 끝나기를 기다린다
+    private Task _loginCheck;
+
     public TranslationQueue(ITranslator translator)
     {
         _translator = translator;
-        _ = CheckLoginAsync(translator, ++_loginCheckId);
+        _loginCheck = CheckLoginAsync(translator, ++_loginCheckId);
     }
 
     public EngineStatus Status { get; private set; } = EngineStatus.Checking;
@@ -47,7 +50,7 @@ internal sealed partial class TranslationQueue : IDisposable
         _translator = translator;
         Status = EngineStatus.Checking;
         StatusDetail = null;
-        _ = CheckLoginAsync(translator, ++_loginCheckId);
+        _loginCheck = CheckLoginAsync(translator, ++_loginCheckId);
     }
 
     /// <summary>게임 스레드에서 불린다. 번역할 줄이면 대기열에 넣고 바로 돌아온다.</summary>
@@ -56,16 +59,50 @@ internal sealed partial class TranslationQueue : IDisposable
         // 내가 보낸 글이 돌아온 것이면 CLI 를 부르지 않고 보낼 때의 한국어 원문을 쓴다
         if (TakeSent(line.Message) is { } korean)
         {
-            line.Complete(TranslationState.Done, korean);
+            line.AddTranslation(OwnTextLabel, isOwnText: true).Complete(TranslationState.Done, korean);
             return;
         }
 
         if (!AutoTranslate || Status != EngineStatus.Ready || !ContainsJapanese(line.Message))
             return;
 
-        line.MarkPending();
-        _ = TranslateAsync(line, _cts.Token);
+        Start(line, _translator);
     }
+
+    /// <summary>내가 보낸 글의 한국어 원문에 붙이는 이름</summary>
+    public const string OwnTextLabel = "내가 쓴 글";
+
+    /// <summary>
+    /// 번역 도구를 바꾼 뒤 부른다. 최근 줄 가운데 번역할 만한 것(일본어가 있고 내가 보낸 글이 아닌 것) count 개를
+    /// 새 도구로 다시 번역한다. 이전 번역은 지우지 않고 그 아래에 더한다. 이미 이 도구로 번역한 줄은 건너뛴다.
+    /// </summary>
+    public async Task RetranslateRecentAsync(IReadOnlyList<ChatLine> lines, int count)
+    {
+        var translator = _translator;
+        try
+        {
+            await _loginCheck; // 새 도구의 로그인 확인이 끝나기를 기다린다
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        // 그사이 다시 도구를 바꿨거나 쓸 수 없는 상태면 그만둔다
+        if (_translator != translator || Status != EngineStatus.Ready)
+            return;
+
+        var targets = lines
+            .Where(l => !l.IsOwnText && ContainsJapanese(l.Message))
+            .TakeLast(count)
+            .Where(l => !l.HasTranslationFrom(translator.ShortName));
+        foreach (var line in targets)
+            Start(line, translator);
+    }
+
+    /// <summary>번역을 시작할 때의 도구로 이름표를 붙이고 번역한다 — 이름표와 실제로 번역한 도구가 어긋나지 않게</summary>
+    private void Start(ChatLine line, ITranslator translator) =>
+        _ = TranslateAsync(line.Message, line.AddTranslation(translator.ShortName), translator, _cts.Token);
 
     /// <summary>
     /// 보낼 한국어를 일본어로 번역한다. 사용자가 기다리는 중이라 받은 채팅의 동시 실행 제한을 거치지 않는다.
@@ -133,16 +170,15 @@ internal sealed partial class TranslationQueue : IDisposable
         Status = status;
     }
 
-    private async Task TranslateAsync(ChatLine line, CancellationToken ct)
+    private async Task TranslateAsync(string message, LineTranslation target, ITranslator translator, CancellationToken ct)
     {
         try
         {
             await _slots.WaitAsync(ct);
             try
             {
-                var translator = _translator;
-                var result = await translator.TranslateAsync(line.Message, TranslationDirection.JaToKo, ct);
-                line.Complete(TranslationState.Done, result.Text);
+                var result = await translator.TranslateAsync(message, TranslationDirection.JaToKo, ct);
+                target.Complete(TranslationState.Done, result.Text);
             }
             finally
             {
@@ -155,7 +191,7 @@ internal sealed partial class TranslationQueue : IDisposable
         }
         catch (TranslationException e)
         {
-            line.Complete(TranslationState.Failed, e.Message);
+            target.Complete(TranslationState.Failed, e.Message);
             // 채팅 내용이 로그 파일에 남지 않게 원인 메시지는 창에만 보여 준다
             Plugin.Log.Warning("받은 채팅 번역 실패");
         }

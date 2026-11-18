@@ -8,7 +8,7 @@ namespace AetheryteChat;
 
 internal enum TranslationState
 {
-    /// <summary>번역하지 않는 줄 (일본어가 없음, 자동 번역 꺼짐 등)</summary>
+    /// <summary>아직 번역하지 않음 (보내기 탭의 뜻 확인에서 쓴다)</summary>
     None,
     Pending,
     Done,
@@ -16,8 +16,31 @@ internal enum TranslationState
 }
 
 /// <summary>
-/// 받은 채팅 한 줄. 번역 결과는 백그라운드 스레드가 채우고 UI 스레드가 읽는다 —
+/// 한 줄에 붙은 번역 하나. 결과는 백그라운드 스레드가 채우고 UI 스레드가 읽는다 —
 /// 상태를 마지막에 써서 상태가 Done 이면 번역문도 보이게 한다.
+/// </summary>
+/// <param name="Engine">번역한 모델 이름 (ITranslator.ShortName). 같은 줄의 여러 번역을 구분한다</param>
+/// <param name="IsOwnText">내가 보낸 글이 돌아온 것 — 번역이 아니라 보낼 때 쓴 한국어 원문</param>
+internal sealed class LineTranslation(string engine, bool isOwnText = false)
+{
+    public string Engine { get; } = engine;
+    public bool IsOwnText { get; } = isOwnText;
+
+    private volatile TranslationState _state = TranslationState.Pending;
+    public TranslationState State => _state;
+
+    /// <summary>Done 이면 번역문, Failed 면 실패 이유</summary>
+    public string? Result { get; private set; }
+
+    public void Complete(TranslationState state, string result)
+    {
+        Result = result;
+        _state = state;
+    }
+}
+
+/// <summary>
+/// 받은 채팅 한 줄. 번역 도구를 바꾸면 새 도구의 번역이 더해지고, 이전 번역은 그대로 남는다.
 /// </summary>
 internal sealed class ChatLine(DateTime time, XivChatType channel, string sender, string message)
 {
@@ -26,18 +49,24 @@ internal sealed class ChatLine(DateTime time, XivChatType channel, string sender
     public string Sender { get; } = sender;
     public string Message { get; } = message;
 
-    private volatile TranslationState _state;
-    public TranslationState State => _state;
+    private readonly Lock _lock = new();
+    private LineTranslation[] _translations = []; // 더할 때마다 새 배열로 바꿔 끼워, 읽는 쪽은 잠그지 않는다
 
-    /// <summary>Done 이면 번역문, Failed 면 실패 이유</summary>
-    public string? Result { get; private set; }
+    public IReadOnlyList<LineTranslation> Translations => Volatile.Read(ref _translations);
 
-    public void MarkPending() => _state = TranslationState.Pending;
+    /// <summary>내가 보낸 글이 돌아온 줄인지 (다시 번역하지 않는다)</summary>
+    public bool IsOwnText => Translations.Any(t => t.IsOwnText);
 
-    public void Complete(TranslationState state, string result)
+    /// <summary>이 모델로 이미 번역했거나 번역 중인지 (실패한 것은 빼고)</summary>
+    public bool HasTranslationFrom(string engine) =>
+        Translations.Any(t => t.Engine == engine && t.State != TranslationState.Failed);
+
+    public LineTranslation AddTranslation(string engine, bool isOwnText = false)
     {
-        Result = result;
-        _state = state;
+        var translation = new LineTranslation(engine, isOwnText);
+        lock (_lock)
+            Volatile.Write(ref _translations, [.. _translations, translation]);
+        return translation;
     }
 }
 

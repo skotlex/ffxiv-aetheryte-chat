@@ -31,6 +31,7 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
         """)!;
 
     public string Name => $"Ollama ({options.Model})";
+    public string ShortName => options.Model;
     public string NotReadyHint => $"모델 없음 — 터미널에서 'ollama pull {options.Model}' 로 받는다";
 
     /// <summary>로그인 대신 Ollama 가 떠 있고 모델을 받아 두었는지 본다. 모델은 부르지 않는다.</summary>

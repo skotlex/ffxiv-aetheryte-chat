@@ -127,20 +127,22 @@ internal sealed class MainWindow : Window
                 WrappedText.Draw(original, channelColor);
             else
                 WrappedText.Draw(original);
+            // 번역 도구를 바꾸면 번역이 더해진다 — 어느 모델의 번역인지 [모델] 로 구분한다
             using var indent = ImRaii.PushIndent();
-            switch (line.State)
+            foreach (var t in line.Translations)
             {
-                case TranslationState.Pending:
-                    ImGui.TextColored(DimColor, "… 번역 중");
-                    break;
-                case TranslationState.Done:
-                    using (ImRaii.PushColor(ImGuiCol.Text, TranslationColor))
-                        WrappedText.Draw($"→ {line.Result}");
-                    break;
-                case TranslationState.Failed:
-                    using (ImRaii.PushColor(ImGuiCol.Text, ErrorColor))
-                        WrappedText.Draw($"번역 실패: {line.Result}");
-                    break;
+                switch (t.State)
+                {
+                    case TranslationState.Pending:
+                        WrappedText.Draw($"… [{t.Engine}] 번역 중", DimColor);
+                        break;
+                    case TranslationState.Done:
+                        WrappedText.Draw($"→ [{t.Engine}] {t.Result}", TranslationColor);
+                        break;
+                    case TranslationState.Failed:
+                        WrappedText.Draw($"[{t.Engine}] 번역 실패: {t.Result}", ErrorColor);
+                        break;
+                }
             }
         }
 
@@ -365,6 +367,9 @@ internal sealed class MainWindow : Window
             });
     }
 
+    /// <summary>번역 도구를 바꿀 때 새 도구로 다시 번역할 최근 대화 수</summary>
+    private const int RetranslateCount = 10;
+
     private static readonly (TranslationEngine Engine, string Label)[] Engines =
     [
         (TranslationEngine.Claude, "Claude CLI — 빠름 (약 2초)"),
@@ -391,6 +396,8 @@ internal sealed class MainWindow : Window
                         config.Engine = engine;
                         config.Save();
                         _plugin.TranslationQueue.SetTranslator(_plugin.CreateTranslator());
+                        // 새 도구로 최근 대화를 다시 번역한다. 이전 번역은 남겨 두고 모델 이름으로 구분한다
+                        _ = _plugin.TranslationQueue.RetranslateRecentAsync(_plugin.ChatListener.Snapshot(), RetranslateCount);
                     }
                 }
             }

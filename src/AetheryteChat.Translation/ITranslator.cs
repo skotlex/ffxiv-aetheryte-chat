@@ -26,6 +26,9 @@ public interface ITranslator
     /// <summary>IsLoggedInAsync 가 false 일 때 보여 줄 안내 (예: 터미널에서 'claude' 로 로그인)</summary>
     string NotReadyHint { get; }
 
+    /// <summary>번역 결과에 붙일 짧은 모델 이름 (같은 줄의 여러 번역을 구분한다)</summary>
+    string ShortName { get; }
+
     /// <summary>모델을 부르지 않고 로그인 상태만 확인한다.</summary>
     Task<bool> IsLoggedInAsync(CancellationToken ct = default);
 
