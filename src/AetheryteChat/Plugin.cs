@@ -1,7 +1,4 @@
-using System.Globalization;
 using Dalamud.Game.Command;
-using Dalamud.Interface;
-using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
@@ -29,24 +26,14 @@ public sealed class Plugin : IDalamudPlugin
     internal ChatListener ChatListener { get; }
     internal TranslationQueue TranslationQueue { get; }
 
-    /// <summary>
-    /// 게임 폰트에는 한글이 없어 ImGui 창에서 따로 불러온다 (DESIGN 3절).
-    /// Dalamud 기본 폰트에 Windows 기본 한글 폰트(맑은 고딕) 글리프와, 채팅에 섞여 오는 게임 전용 기호
-    /// (자동 번역 괄호·파티 모집 표시·파티 번호 등 U+E0xx) 글리프를 합친다.
-    /// </summary>
-    internal IFontHandle KoreanFont { get; }
+    /// <summary>이 창의 폰트 (설정에서 고른 폰트 + 한글·일본어·게임 기호 보충)</summary>
+    internal WindowFont WindowFont { get; }
 
     public Plugin()
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
-        KoreanFont = PluginInterface.UiBuilder.FontAtlas.NewDelegateFontHandle(e => e.OnPreBuild(tk =>
-        {
-            var font = tk.AddDalamudDefaultFont(-1, null);
-            var config = new SafeFontConfig { SizePx = UiBuilder.DefaultFontSizePx, MergeFont = font };
-            tk.AttachWindowsDefaultFont(CultureInfo.GetCultureInfo("ko-KR"), in config, 400, 5, 0);
-            tk.AddGameSymbol(in config);
-        }));
+        WindowFont = new WindowFont(PluginInterface.UiBuilder.FontAtlas, Configuration.WindowFont);
 
         TranslationQueue = new TranslationQueue(CreateTranslator());
         ChatListener = new ChatListener(ChatGui, TranslationQueue.Enqueue);
@@ -81,6 +68,6 @@ public sealed class Plugin : IDalamudPlugin
         _windowSystem.RemoveAllWindows();
         ChatListener.Dispose();
         TranslationQueue.Dispose();
-        KoreanFont.Dispose();
+        WindowFont.Dispose();
     }
 }

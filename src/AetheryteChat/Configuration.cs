@@ -42,6 +42,9 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public float? MasterOpacity { get; set; }
 
+    /// <summary>이 창의 폰트와 크기 (Dalamud 폰트 선택 창에서 고른 값). null 이면 Dalamud 기본 폰트</summary>
+    public Dalamud.Interface.FontIdentifier.SingleFontSpec? WindowFont { get; set; }
+
     /// <summary>이 창에만 적용할 Dalamud 스타일 이름 (스타일 편집기에서 저장한 것 또는 내장). null 이면 Dalamud 설정을 따른다</summary>
     public string? WindowStyleName { get; set; }
 

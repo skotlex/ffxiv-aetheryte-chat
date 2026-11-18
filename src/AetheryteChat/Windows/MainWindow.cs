@@ -2,6 +2,8 @@ using System.Numerics;
 using System.Text;
 using AetheryteChat.Translation;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface;
+using Dalamud.Interface.ImGuiFontChooserDialog;
 using Dalamud.Interface.Style;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
@@ -79,7 +81,7 @@ internal sealed class MainWindow : Window
 
     public override void Draw()
     {
-        using var font = _plugin.KoreanFont.Push();
+        using var font = _plugin.WindowFont.Handle.Push();
         using var tabs = ImRaii.TabBar("##tabs");
         if (!tabs.Success)
             return;
@@ -399,6 +401,10 @@ internal sealed class MainWindow : Window
 
         ImGuiHelpers.ScaledDummy(8);
 
+        DrawFontSettings(config);
+
+        ImGuiHelpers.ScaledDummy(8);
+
         ImGui.TextUnformatted("창 스타일");
         const string followDalamud = "Dalamud 설정 따르기";
         ImGui.SetNextItemWidth(320 * ImGuiHelpers.GlobalScale);
@@ -506,9 +512,58 @@ internal sealed class MainWindow : Window
                 config);
         }
 
-        WrappedText.Draw(
-            "이 창에만 적용된다. 제목줄 ≡ 메뉴의 '불투명도' 는 글자까지 흐려지므로 100% 로 둔다.",
-            DimColor);
+    }
+
+    /// <summary>
+    /// 이 창의 폰트와 크기. Dalamud 의 폰트 선택 창(설치된 Windows 폰트·Dalamud 폰트·게임 폰트, 크기 포함)으로 고른다
+    /// </summary>
+    private void DrawFontSettings(Configuration config)
+    {
+        ImGui.TextUnformatted("폰트");
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted(config.WindowFont is { } spec ? spec.ToLocalizedString("ko-KR") : "Dalamud 기본");
+        ImGui.SameLine();
+        using (ImRaii.Disabled(_fontChooserOpen))
+        {
+            if (ImGui.Button("폰트 고르기"))
+                OpenFontChooser(config);
+        }
+        ImGui.SameLine();
+        using (ImRaii.Disabled(config.WindowFont is null))
+        {
+            if (ImGui.Button("초기화##font"))
+            {
+                config.WindowFont = null;
+                config.Save();
+                _plugin.WindowFont.Change(null);
+            }
+        }
+    }
+
+    private bool _fontChooserOpen;
+
+    private void OpenFontChooser(Configuration config)
+    {
+        // CreateAuto 는 창을 알아서 그리고 닫히면 스스로 정리한다
+        var chooser = SingleFontChooserDialog.CreateAuto((UiBuilder)Plugin.PluginInterface.UiBuilder);
+        chooser.Title = "Aetheryte Chat 폰트";
+        chooser.PreviewText = "가나다 한글 테스트 — 零式4層、初見です ABC 123";
+        // 기본은 모달(BeginPopupModal)이라 ImGui 가 뒤의 다른 창 전체를 밝은 반투명 막(ModalWindowDimBg)으로 덮는다.
+        // 일반 창으로 연다 — 열려 있는 동안 '폰트 고르기' 버튼은 막혀 있어 두 개가 뜨지 않는다
+        chooser.IsModal = false;
+        if (config.WindowFont is { } current)
+            chooser.SelectedFont = current;
+        _fontChooserOpen = true;
+
+        chooser.ResultTask.ContinueWith(t =>
+        {
+            _fontChooserOpen = false;
+            if (!t.IsCompletedSuccessfully)
+                return; // 취소
+            config.WindowFont = t.Result;
+            config.Save();
+            _plugin.WindowFont.Change(t.Result);
+        });
     }
 
     private static float OpacitySliderWidth => 120 * ImGuiHelpers.GlobalScale;
