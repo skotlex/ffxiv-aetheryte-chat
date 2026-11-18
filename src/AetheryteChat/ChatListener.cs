@@ -77,6 +77,9 @@ internal sealed class ChatListener : IDisposable
 
     public void Dispose() => _chatGui.ChatMessageUnhandled -= OnChatMessage;
 
+    /// <summary>마지막으로 귓속말을 보낸 사람 ('이름' 또는 '이름@서버' — /t 에 그대로 쓸 수 있는 형식)</summary>
+    public string? LastTellSender { get; private set; }
+
     public IReadOnlyList<ChatLine> Snapshot()
     {
         lock (_lock)
@@ -95,6 +98,8 @@ internal sealed class ChatListener : IDisposable
             return;
 
         var line = new ChatLine(DateTime.Now, message.LogKind, FormatSender(message.Sender), message.Message.TextValue);
+        if (message.LogKind == XivChatType.TellIncoming)
+            LastTellSender = line.Sender;
         lock (_lock)
         {
             _lines.AddLast(line);
