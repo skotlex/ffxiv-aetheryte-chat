@@ -1,4 +1,3 @@
-using System.Text;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
@@ -108,29 +107,45 @@ internal sealed class SendPanel(Plugin plugin)
             return;
         }
 
-        ImGui.TextColored(DimColor, "보낼 일본어");
-        using (ImRaii.PushIndent())
-            WrappedText.Draw(_japanese);
+        DrawLabeled("보낼 일본어", _japanese, null);
 
-        ImGui.TextColored(DimColor, "다시 한국어로 (뜻 확인)");
-        using (ImRaii.PushIndent())
+        var (back, backColor) = _backState switch
         {
-            switch (_backState)
-            {
-                case TranslationState.Pending:
-                    ImGui.TextColored(DimColor, "… 확인 중 (기다리지 않고 보내셔도 됩니다)");
-                    break;
-                case TranslationState.Done:
-                    WrappedText.Draw(_back, TranslationColor);
-                    break;
-                case TranslationState.Failed:
-                    WrappedText.Draw($"확인 실패: {_back}", ErrorColor);
-                    break;
-            }
-        }
+            TranslationState.Pending => ("… 확인 중 (기다리지 않고 보내셔도 됩니다)", DimColor),
+            TranslationState.Done => (_back, TranslationColor),
+            TranslationState.Failed => ($"확인 실패: {_back}", ErrorColor),
+            _ => ("", DimColor),
+        };
+        if (back.Length > 0)
+            DrawLabeled("다시 한국어로 (뜻 확인)", back, backColor);
 
         if (stale)
             WrappedText.Draw("한국어가 바뀌었습니다 — Enter로 다시 번역해 주세요.", ErrorColor);
+    }
+
+    /// <summary>
+    /// 이름표와 내용. 내용이 이름표 옆에 한 줄로 들어가면 같은 줄에, 아니면 다음 줄에 들여 쓰고 줄바꿈한다.
+    /// color 가 null 이면 기본 글자색
+    /// </summary>
+    private static void DrawLabeled(string label, string text, System.Numerics.Vector4? color)
+    {
+        ImGui.TextColored(DimColor, label);
+        if (Layout.SameLineIfFits(Layout.TextWidth(text)))
+        {
+            if (color is { } c)
+                ImGui.TextColored(c, text);
+            else
+                ImGui.TextUnformatted(text);
+            return;
+        }
+
+        using (ImRaii.PushIndent())
+        {
+            if (color is { } c)
+                WrappedText.Draw(text, c);
+            else
+                WrappedText.Draw(text);
+        }
     }
 
     private string? SendError(SendChannel channel, string prefix)
@@ -161,7 +176,7 @@ internal sealed class SendPanel(Plugin plugin)
             {
                 _translatedFrom = korean;
                 _japanese = t.Result.Text;
-                SetStatus($"번역했습니다 ({t.Result.Elapsed.TotalSeconds:0.0}초, {Encoding.UTF8.GetByteCount(_japanese)}바이트).", false);
+                SetStatus("", false); // '번역 중…' 을 지운다. 결과는 '보낼 일본어' 줄이 보여 준다
                 CheckMeaning(id, _japanese);
             }
             else if (!t.IsCanceled)
