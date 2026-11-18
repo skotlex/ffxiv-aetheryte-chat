@@ -65,6 +65,7 @@ public sealed class Plugin : IDalamudPlugin
     internal static ITranslator CreateTranslator(TranslationEngine engine) => engine switch
     {
         TranslationEngine.Codex => new CodexCliTranslator(new CodexCliOptions()),
+        TranslationEngine.Papago => new PapagoWebTranslator(),
         _ => new ClaudeCliTranslator(new ClaudeCliOptions()),
     };
 

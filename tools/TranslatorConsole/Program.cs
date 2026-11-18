@@ -4,7 +4,7 @@
 //   dotnet run --project tools/TranslatorConsole -- ja2ko "零式4層、初見です。よろしくお願いします！"
 //   dotnet run --project tools/TranslatorConsole -- ko2ja --effort low          (줄마다 번역, 빈 줄로 끝)
 //
-// 옵션: --engine <claude|codex> (기본 claude), --model <name> (claude 기본 haiku),
+// 옵션: --engine <claude|codex|papago> (기본 claude), --model <name> (claude 기본 haiku),
 //       --effort <low|medium|high> (claude: --effort, codex: reasoning effort), --exe <실행 파일 경로>
 
 using System.Text;
@@ -51,6 +51,10 @@ switch (engine)
             codex.ReasoningEffort = effort;
         translator = new CodexCliTranslator(codex);
         exePath = exe ?? CodexCliLocator.Find();
+        break;
+    case "papago":
+        translator = new PapagoWebTranslator();
+        exePath = "(실행 파일 없음 — 웹 요청)";
         break;
     default:
         Console.Error.WriteLine($"알 수 없는 엔진: {engine}");

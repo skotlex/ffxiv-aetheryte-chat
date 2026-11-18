@@ -338,6 +338,7 @@ internal sealed class MainWindow : Window
     [
         (TranslationEngine.Claude, "Claude CLI — 빠름 (약 2초)"),
         (TranslationEngine.Codex, "Codex CLI — 느림 (약 5~6초), 토큰 많이 씀"),
+        (TranslationEngine.Papago, "Papago (웹) — 로그인 불필요, 비공식 경로라 막힐 수 있음, 게임 용어 약함"),
     ];
 
     private void DrawSettings()

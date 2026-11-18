@@ -6,6 +6,7 @@ public enum TranslationEngine
 {
     Claude,
     Codex,
+    Papago,
 }
 
 /// <summary>
