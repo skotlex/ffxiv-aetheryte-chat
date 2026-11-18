@@ -46,6 +46,11 @@ internal sealed class MainWindow : StyledWindow
             if (tab.Success)
                 DrawSettings();
         }
+        using (var tab = ImRaii.TabItem("스타일###style"))
+        {
+            if (tab.Success)
+                DrawStyleSettings();
+        }
     }
 
     private void DrawChat(bool sendBelow)
@@ -185,6 +190,40 @@ internal sealed class MainWindow : StyledWindow
         DrawSendPlacement(config);
 
         ImGuiHelpers.ScaledDummy(8);
+
+        DrawTranslateChannels(config);
+    }
+
+    /// <summary>
+    /// 번역할 채널 묶음마다 체크박스. 끈 채널의 대화도 채팅 기록에는 그대로 나오고 번역만 하지 않는다.
+    /// 폭에 맞춰 옆으로 늘어놓고, 자리가 없으면 다음 줄로 내린다
+    /// </summary>
+    private static void DrawTranslateChannels(Configuration config)
+    {
+        ImGui.TextUnformatted("번역할 채널");
+        var first = true;
+        foreach (var (group, label, _) in TranslateChannels.Groups)
+        {
+            if (!first)
+                Layout.SameLineIfFits(Layout.CheckboxWidth(label));
+            first = false;
+
+            var enabled = !config.DisabledTranslateChannels.Contains(group);
+            if (ImGui.Checkbox($"{label}##translate{group}", ref enabled))
+            {
+                if (enabled)
+                    config.DisabledTranslateChannels.Remove(group);
+                else
+                    config.DisabledTranslateChannels.Add(group);
+                config.Save();
+            }
+        }
+    }
+
+    /// <summary>스타일 탭: 이 플러그인 창들에만 적용하는 폰트·창 스타일·색·불투명도</summary>
+    private void DrawStyleSettings()
+    {
+        var config = Owner.Configuration;
 
         DrawFontSettings(config);
 

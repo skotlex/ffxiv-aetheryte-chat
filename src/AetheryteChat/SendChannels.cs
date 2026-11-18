@@ -60,7 +60,7 @@ internal static unsafe class SendChannels
         }
 
         // 게임 목록에는 없지만 시험할 때 남에게 보내지 않으려고 둔다
-        list.Add(new("echo", "Echo (나에게만 보임)", "/e"));
+        list.Add(new("echo", "혼잣말 (나에게만 보임)", "/e"));
         return list;
     }
 

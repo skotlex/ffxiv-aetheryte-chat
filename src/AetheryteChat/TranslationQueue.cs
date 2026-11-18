@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using AetheryteChat.Translation;
+using Dalamud.Game.Text;
 
 namespace AetheryteChat;
 
@@ -32,9 +33,13 @@ internal sealed partial class TranslationQueue : IDisposable
     // 지금 엔진의 로그인 확인 — 엔진을 바꾼 직후의 다시 번역이 확인이 끝나기를 기다린다
     private Task _loginCheck;
 
-    public TranslationQueue(ITranslator translator)
+    // 설정의 '번역할 채널' — 끈 채널의 대화는 번역하지 않는다 (채팅 기록에는 그대로 나온다)
+    private readonly Func<XivChatType, bool> _isChannelEnabled;
+
+    public TranslationQueue(ITranslator translator, Func<XivChatType, bool> isChannelEnabled)
     {
         _translator = translator;
+        _isChannelEnabled = isChannelEnabled;
         _loginCheck = CheckLoginAsync(translator, ++_loginCheckId);
     }
 
@@ -63,7 +68,7 @@ internal sealed partial class TranslationQueue : IDisposable
             return;
         }
 
-        if (!AutoTranslate || Status != EngineStatus.Ready || !ContainsJapanese(line.Message))
+        if (!AutoTranslate || Status != EngineStatus.Ready || !_isChannelEnabled(line.Channel) || !ContainsJapanese(line.Message))
             return;
 
         Start(line, _translator);
@@ -93,7 +98,7 @@ internal sealed partial class TranslationQueue : IDisposable
             return;
 
         var targets = lines
-            .Where(l => !l.IsOwnText && ContainsJapanese(l.Message))
+            .Where(l => !l.IsOwnText && _isChannelEnabled(l.Channel) && ContainsJapanese(l.Message))
             .TakeLast(count)
             .Where(l => !l.HasTranslationFrom(translator.ShortName));
         foreach (var line in targets)

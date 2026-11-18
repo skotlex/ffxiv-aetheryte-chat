@@ -44,7 +44,7 @@ public sealed class Plugin : IDalamudPlugin
 
         WindowFont = new WindowFont(PluginInterface.UiBuilder.FontAtlas, Configuration.WindowFont);
 
-        TranslationQueue = new TranslationQueue(CreateTranslator());
+        TranslationQueue = new TranslationQueue(CreateTranslator(), channel => TranslateChannels.IsEnabled(Configuration, channel));
         ChatListener = new ChatListener(ChatGui, TranslationQueue.Enqueue);
         SendPanel = new SendPanel(this);
         _mainWindow = new MainWindow(this);

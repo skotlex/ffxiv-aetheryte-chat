@@ -61,6 +61,11 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>번역 도구. Claude CLI 가 주력이고 Codex CLI 는 느리지만 대안 (DESIGN 4절)</summary>
     public TranslationEngine Engine { get; set; } = TranslationEngine.Claude;
 
+    /// <summary>
+    /// 번역하지 않을 채널 묶음. 끈 것만 적어, 나중에 묶음이 늘어도 새 묶음은 기본으로 켜진다
+    /// </summary>
+    public HashSet<TranslateChannelGroup> DisabledTranslateChannels { get; set; } = [];
+
     /// <summary>보내기 위치. 기본은 받은 채팅 아래</summary>
     public SendPanelPlacement SendPanelPlacement { get; set; } = SendPanelPlacement.BelowChat;
 

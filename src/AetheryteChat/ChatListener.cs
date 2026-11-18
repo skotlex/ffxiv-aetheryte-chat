@@ -77,19 +77,8 @@ internal sealed class ChatListener : IDisposable
 {
     private const int MaxLines = 200;
 
-    private static readonly HashSet<XivChatType> PlayerChannels =
-    [
-        XivChatType.Say, XivChatType.Shout, XivChatType.Yell,
-        XivChatType.Party, XivChatType.CrossParty, XivChatType.Alliance,
-        XivChatType.FreeCompany, XivChatType.NoviceNetwork,
-        XivChatType.TellIncoming, XivChatType.TellOutgoing,
-        XivChatType.Ls1, XivChatType.Ls2, XivChatType.Ls3, XivChatType.Ls4,
-        XivChatType.Ls5, XivChatType.Ls6, XivChatType.Ls7, XivChatType.Ls8,
-        XivChatType.CrossLinkShell1, XivChatType.CrossLinkShell2, XivChatType.CrossLinkShell3, XivChatType.CrossLinkShell4,
-        XivChatType.CrossLinkShell5, XivChatType.CrossLinkShell6, XivChatType.CrossLinkShell7, XivChatType.CrossLinkShell8,
-        // 보내기 시험을 /e 로 하므로 Echo 도 받는다
-        XivChatType.Echo,
-    ];
+    // 받는 채널은 설정의 '번역할 채널' 묶음과 같은 목록을 쓴다 — 둘이 어긋나 받기만 하고 설정에 없는 채널이 생기지 않게
+    private static readonly HashSet<XivChatType> PlayerChannels = TranslateChannels.AllTypes;
 
     private readonly IChatGui _chatGui;
     private readonly Action<ChatLine> _onLine;
