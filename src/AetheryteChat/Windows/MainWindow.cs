@@ -133,7 +133,7 @@ internal sealed class MainWindow : StyledWindow
     {
         ImGui.TextUnformatted("보내기 위치");
         var current = Placements.FirstOrDefault(p => p.Placement == config.SendPanelPlacement);
-        ImGui.SetNextItemWidth(Layout.FitWidth(320 * ImGuiHelpers.GlobalScale));
+        ImGui.SetNextItemWidth(Layout.ComboWidth(Placements.Select(p => p.Label)));
         using var combo = ImRaii.Combo("##sendPlacement", current.Label ?? config.SendPanelPlacement.ToString());
         if (!combo.Success)
             return;
@@ -166,7 +166,7 @@ internal sealed class MainWindow : StyledWindow
 
         ImGui.TextUnformatted("번역 도구");
         var current = Engines.FirstOrDefault(e => e.Engine == config.Engine);
-        ImGui.SetNextItemWidth(Layout.FitWidth(320 * ImGuiHelpers.GlobalScale));
+        ImGui.SetNextItemWidth(Layout.ComboWidth(Engines.Select(e => e.Name)));
         using (var combo = ImRaii.Combo("##engine", current.Name ?? config.Engine.ToString()))
         {
             if (combo.Success)
@@ -232,7 +232,7 @@ internal sealed class MainWindow : StyledWindow
 
         ImGui.TextUnformatted("창 스타일");
         const string followDalamud = "Dalamud 설정 따르기";
-        ImGui.SetNextItemWidth(Layout.FitWidth(320 * ImGuiHelpers.GlobalScale));
+        ImGui.SetNextItemWidth(Layout.ComboWidth(Owner.WindowStyles.All.Select(s => s.Name).Append(followDalamud)));
         using (var combo = ImRaii.Combo("##windowStyle", config.WindowStyleName ?? followDalamud))
         {
             if (combo.Success)

@@ -44,6 +44,16 @@ internal static class Layout
 
     /// <summary>원하는 폭과 이 줄에 남은 폭 중 작은 쪽 (목록 상자·슬라이더 폭)</summary>
     public static float FitWidth(float preferred) => Math.Min(preferred, ImGui.GetContentRegionAvail().X);
+    /// <summary>
+    /// 목록 상자 폭: 목록 상자에 보일 수 있는 이름 가운데 가장 긴 것에 맞춘다(글자 + 안쪽 여백 + ▼ 버튼).
+    /// 남은 폭보다 넓으면 남은 폭에 맞춘다
+    /// </summary>
+    public static float ComboWidth(IEnumerable<string> previews)
+    {
+        var text = previews.Select(TextWidth).DefaultIfEmpty(0f).Max();
+        return FitWidth(text + ImGui.GetStyle().FramePadding.X * 2 + ImGui.GetFrameHeight());
+    }
+
     /// <summary>버튼 폭. '##' 뒤의 ID 부분은 보이지 않으므로 빼고 잰다</summary>
     public static float ButtonWidth(string label) =>
         ImGui.CalcTextSize(VisibleLabel(label)).X + ImGui.GetStyle().FramePadding.X * 2;

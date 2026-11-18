@@ -225,7 +225,8 @@ internal sealed class SendPanel(Plugin plugin)
         {
             ImGui.TextUnformatted("채널");
         }
-        ImGui.SetNextItemWidth(Layout.FitWidth(260 * ImGuiHelpers.GlobalScale));
+        // 채널 이름(특히 링크셸)은 길 수 있어 지금 고른 이름에 맞춘다. 펼친 목록은 ImGui 가 내용 폭에 맞춰 넓힌다
+        ImGui.SetNextItemWidth(Layout.ComboWidth([selected.Label]));
         using (var combo = ImRaii.Combo("##channel", selected.Label))
         {
             if (combo.Success)
