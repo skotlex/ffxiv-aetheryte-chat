@@ -6,11 +6,14 @@ namespace AetheryteChat.Windows;
 /// <summary>이 창에서 따로 색을 정할 수 있는 컨트롤 묶음. 순서는 설정 탭에 보이는 순서</summary>
 public enum ControlColorGroup
 {
+    // 설정 파일에는 이름으로 저장되므로 중간에 끼워 넣어도 저장된 값이 어긋나지 않는다
     TitleBar,
     Button,
     Frame,
+    Popup,
     Tab,
     Grab,
+    Scrollbar,
     Text,
 }
 
@@ -24,14 +27,17 @@ internal static class CustomColors
     private const float HoverLighten = 0.10f;
     private const float ActiveLighten = 0.20f;
     private const float DimDarken = 0.25f;
+    private const float ScrollbarTrackDarken = 0.4f; // 스크롤바 바탕(길)은 손잡이 색을 이만큼으로 어둡게
 
     public static readonly (ControlColorGroup Group, string Label)[] Groups =
     [
         (ControlColorGroup.TitleBar, "제목줄"),
         (ControlColorGroup.Button, "버튼·선택 강조"),
         (ControlColorGroup.Frame, "입력칸·목록"),
+        (ControlColorGroup.Popup, "목록 펼침"),
         (ControlColorGroup.Tab, "탭"),
         (ControlColorGroup.Grab, "슬라이더·체크"),
+        (ControlColorGroup.Scrollbar, "스크롤바"),
         (ControlColorGroup.Text, "글자"),
     ];
 
@@ -70,8 +76,10 @@ internal static class CustomColors
         ControlColorGroup.TitleBar => ImGuiCol.TitleBgActive,
         ControlColorGroup.Button => ImGuiCol.Button,
         ControlColorGroup.Frame => ImGuiCol.FrameBg,
+        ControlColorGroup.Popup => ImGuiCol.PopupBg,
         ControlColorGroup.Tab => ImGuiCol.TabActive,
         ControlColorGroup.Grab => ImGuiCol.SliderGrab,
+        ControlColorGroup.Scrollbar => ImGuiCol.ScrollbarGrab,
         _ => ImGuiCol.Text,
     };
 
@@ -104,6 +112,16 @@ internal static class CustomColors
                 yield return (ImGuiCol.FrameBg, same);
                 yield return (ImGuiCol.FrameBgHovered, hover);
                 yield return (ImGuiCol.FrameBgActive, active);
+                break;
+            case ControlColorGroup.Popup:
+                // 목록 상자를 펼쳤을 때의 목록 창, 툴팁. 고른 줄·마우스를 올린 줄은 '버튼·선택 강조' 가 맡는다
+                yield return (ImGuiCol.PopupBg, same);
+                break;
+            case ControlColorGroup.Scrollbar:
+                yield return (ImGuiCol.ScrollbarGrab, same);
+                yield return (ImGuiCol.ScrollbarGrabHovered, hover);
+                yield return (ImGuiCol.ScrollbarGrabActive, active);
+                yield return (ImGuiCol.ScrollbarBg, c => c * ScrollbarTrackDarken);
                 break;
             case ControlColorGroup.Tab:
                 yield return (ImGuiCol.TabActive, same);
