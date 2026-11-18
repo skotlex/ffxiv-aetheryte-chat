@@ -1,5 +1,7 @@
 using Dalamud.Game.Chat;
 using Dalamud.Game.Text;
+using Dalamud.Game.Text.SeStringHandling;
+using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Plugin.Services;
 
 namespace AetheryteChat;
@@ -92,7 +94,7 @@ internal sealed class ChatListener : IDisposable
         if (!PlayerChannels.Contains(message.LogKind))
             return;
 
-        var line = new ChatLine(DateTime.Now, message.LogKind, message.Sender.TextValue, message.Message.TextValue);
+        var line = new ChatLine(DateTime.Now, message.LogKind, FormatSender(message.Sender), message.Message.TextValue);
         lock (_lock)
         {
             _lines.AddLast(line);
@@ -100,5 +102,28 @@ internal sealed class ChatListener : IDisposable
                 _lines.RemoveFirst();
         }
         _onLine(line);
+    }
+
+    /// <summary>
+    /// 발신자 SeString 의 TextValue 는 이름과 서버 이름이 붙어 나온다 (게임은 그 사이에 서버 아이콘을 그린다).
+    /// PlayerPayload 에서 이름·서버를 꺼내, 게임이 서버를 보여 준 경우(다른 서버 플레이어)만 '이름@서버' 로 만든다.
+    /// 이름 앞의 기호(파티 번호 등)는 그대로 둔다.
+    /// </summary>
+    private static string FormatSender(SeString sender)
+    {
+        var text = sender.TextValue;
+        var player = sender.Payloads.OfType<PlayerPayload>().FirstOrDefault();
+        if (player is null)
+            return text;
+
+        var name = player.PlayerName;
+        var nameAt = text.IndexOf(name, StringComparison.Ordinal);
+        if (nameAt < 0)
+            return text;
+
+        var prefix = text[..nameAt];
+        var world = player.World.ValueNullable?.Name.ExtractText() ?? "";
+        var worldShown = world.Length > 0 && text.AsSpan(nameAt + name.Length).Trim().EndsWith(world, StringComparison.Ordinal);
+        return worldShown ? $"{prefix}{name}@{world}" : $"{prefix}{name}";
     }
 }
