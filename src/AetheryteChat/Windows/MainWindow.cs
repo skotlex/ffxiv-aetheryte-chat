@@ -109,11 +109,10 @@ internal sealed class MainWindow : Window
 
         if (ImGui.Button("지우기"))
             _plugin.ChatListener.Clear();
-        ImGui.SameLine();
+        Layout.SameLineIfFits(Layout.CheckboxWidth("자동 번역"));
         var auto = queue.AutoTranslate;
         if (ImGui.Checkbox("자동 번역", ref auto))
             queue.AutoTranslate = auto;
-        ImGui.SameLine();
         DrawEngineStatus(queue);
 
         using var child = ImRaii.Child("##log", Vector2.Zero, true);
@@ -180,14 +179,15 @@ internal sealed class MainWindow : Window
             if (ImGui.Button("번역") && canTranslate)
                 Translate(korean);
         }
-        ImGui.SameLine();
+        Layout.SameLineIfFits(Layout.ButtonWidth("보내기"));
         using (ImRaii.Disabled(!canSend))
         {
             if (ImGui.Button("보내기") && canSend)
                 Send(channel.Label, prefix);
         }
-        ImGui.SameLine();
-        ImGui.TextColored(DimColor, canSend ? "Enter: 보내기" : "Enter: 번역");
+        var enterHint = canSend ? "Enter: 보내기" : "Enter: 번역";
+        Layout.SameLineIfFits(Layout.TextWidth(enterHint));
+        ImGui.TextColored(DimColor, enterHint);
 
         if (enter)
         {
@@ -307,7 +307,7 @@ internal sealed class MainWindow : Window
         var channels = SendChannels.Build();
         var selected = channels.FirstOrDefault(c => c.Key == _channelKey) ?? channels[0];
 
-        ImGui.SetNextItemWidth(260 * ImGuiHelpers.GlobalScale);
+        ImGui.SetNextItemWidth(Layout.FitWidth(260 * ImGuiHelpers.GlobalScale, "채널"));
         using (var combo = ImRaii.Combo("채널", selected.Label))
         {
             if (combo.Success)
@@ -325,12 +325,11 @@ internal sealed class MainWindow : Window
                 }
             }
         }
-        ImGui.SameLine();
         DrawEngineStatus(_plugin.TranslationQueue);
 
         if (selected.NeedsTellTarget)
         {
-            ImGui.SetNextItemWidth(260 * ImGuiHelpers.GlobalScale);
+            ImGui.SetNextItemWidth(Layout.FitWidth(260 * ImGuiHelpers.GlobalScale, "받는 사람"));
             ImGui.InputTextWithHint("받는 사람", "이름 성@서버", ref _tellTarget, 64);
         }
         return selected;
@@ -380,7 +379,7 @@ internal sealed class MainWindow : Window
 
         ImGui.TextUnformatted("번역 도구");
         var current = Engines.FirstOrDefault(e => e.Engine == config.Engine);
-        ImGui.SetNextItemWidth(320 * ImGuiHelpers.GlobalScale);
+        ImGui.SetNextItemWidth(Layout.FitWidth(320 * ImGuiHelpers.GlobalScale));
         using (var combo = ImRaii.Combo("##engine", current.Label ?? config.Engine.ToString()))
         {
             if (combo.Success)
@@ -396,7 +395,6 @@ internal sealed class MainWindow : Window
                 }
             }
         }
-        ImGui.SameLine();
         DrawEngineStatus(_plugin.TranslationQueue);
 
         ImGuiHelpers.ScaledDummy(8);
@@ -407,7 +405,7 @@ internal sealed class MainWindow : Window
 
         ImGui.TextUnformatted("창 스타일");
         const string followDalamud = "Dalamud 설정 따르기";
-        ImGui.SetNextItemWidth(320 * ImGuiHelpers.GlobalScale);
+        ImGui.SetNextItemWidth(Layout.FitWidth(320 * ImGuiHelpers.GlobalScale));
         using (var combo = ImRaii.Combo("##windowStyle", config.WindowStyleName ?? followDalamud))
         {
             if (combo.Success)
@@ -444,7 +442,7 @@ internal sealed class MainWindow : Window
 
         // 일괄 불투명도 — 움직이면 각 줄의 불투명도를 이 값으로 맞춘다. 맞춘 뒤 줄마다 따로 다듬을 수 있다
         var master = (config.MasterOpacity ?? 1f) * 100f;
-        ImGui.SetNextItemWidth(OpacitySliderWidth);
+        ImGui.SetNextItemWidth(Layout.FitWidth(OpacitySliderWidth));
         if (ImGui.SliderFloat("##masterAlpha", ref master, 0f, 100f, "%.0f%%"))
         {
             var value = Math.Clamp(master / 100f, 0f, 1f);
@@ -458,7 +456,7 @@ internal sealed class MainWindow : Window
         }
         if (ImGui.IsItemDeactivatedAfterEdit())
             config.Save();
-        ImGui.SameLine();
+        Layout.SameLineIfFits(Layout.ButtonWidth("초기화##master"));
         // 불투명도만 되돌린다 — 골라 둔 색은 줄마다의 초기화로만 지운다
         var anyOpacity = config.MasterOpacity is not null || config.BackgroundOpacity is not null || config.ControlOpacity.Count > 0;
         using (ImRaii.Disabled(!anyOpacity))
@@ -471,8 +469,9 @@ internal sealed class MainWindow : Window
                 config.Save();
             }
         }
-        ImGui.SameLine();
-        ImGui.TextUnformatted("일괄 불투명도 (글자 제외)");
+        const string masterLabel = "일괄 불투명도 (글자 제외)";
+        Layout.SameLineIfFits(Layout.TextWidth(masterLabel));
+        ImGui.TextUnformatted(masterLabel);
 
         ImGuiHelpers.ScaledDummy(2);
 
@@ -520,15 +519,15 @@ internal sealed class MainWindow : Window
     private void DrawFontSettings(Configuration config)
     {
         ImGui.TextUnformatted("폰트");
-        ImGui.AlignTextToFramePadding();
-        ImGui.TextUnformatted(config.WindowFont is { } spec ? spec.ToLocalizedString("ko-KR") : "Dalamud 기본");
-        ImGui.SameLine();
+        // 폰트 이름은 길어서 자기 줄에서 줄바꿈하고, 버튼은 그 아래에 둔다
+        using (ImRaii.PushIndent())
+            WrappedText.Draw(config.WindowFont is { } spec ? spec.ToLocalizedString("ko-KR") : "Dalamud 기본", DimColor);
         using (ImRaii.Disabled(_fontChooserOpen))
         {
             if (ImGui.Button("폰트 고르기"))
                 OpenFontChooser(config);
         }
-        ImGui.SameLine();
+        Layout.SameLineIfFits(Layout.ButtonWidth("초기화##font"));
         using (ImRaii.Disabled(config.WindowFont is null))
         {
             if (ImGui.Button("초기화##font"))
@@ -578,15 +577,16 @@ internal sealed class MainWindow : Window
         if (ImGui.IsItemDeactivatedAfterEdit())
             config.Save();
 
-        ImGui.SameLine();
+        // 폭이 좁으면 슬라이더·초기화·이름을 다음 줄로 내린다
+        Layout.SameLineIfFits(Math.Min(OpacitySliderWidth, ImGui.GetContentRegionAvail().X));
         var percent = opacity * 100f;
-        ImGui.SetNextItemWidth(OpacitySliderWidth);
+        ImGui.SetNextItemWidth(Layout.FitWidth(OpacitySliderWidth));
         if (ImGui.SliderFloat($"##alpha{id}", ref percent, 0f, 100f, "%.0f%%"))
             setOpacity(Math.Clamp(percent / 100f, 0f, 1f));
         if (ImGui.IsItemDeactivatedAfterEdit())
             config.Save();
 
-        ImGui.SameLine();
+        Layout.SameLineIfFits(Layout.ButtonWidth("초기화"));
         using (ImRaii.Disabled(!customized))
         {
             if (ImGui.Button($"초기화##reset{id}"))
@@ -595,7 +595,7 @@ internal sealed class MainWindow : Window
                 config.Save();
             }
         }
-        ImGui.SameLine();
+        Layout.SameLineIfFits(Layout.TextWidth(label));
         ImGui.TextUnformatted(label);
     }
 
@@ -605,6 +605,9 @@ internal sealed class MainWindow : Window
         _sendStatus = text;
     }
 
+    /// <summary>
+    /// 엔진 상태를 바로 앞 컨트롤 옆에 그린다. 자리가 모자라면 다음 줄에 줄바꿈해서 그린다
+    /// </summary>
     private static void DrawEngineStatus(TranslationQueue queue)
     {
         var (text, color) = queue.Status switch
@@ -614,7 +617,14 @@ internal sealed class MainWindow : Window
             EngineStatus.NotLoggedIn => ($"{queue.EngineName} {queue.NotReadyHint}", ErrorColor),
             _ => ($"{queue.EngineName} 사용 불가: {queue.StatusDetail}", ErrorColor),
         };
-        ImGui.AlignTextToFramePadding();
-        ImGui.TextColored(color, text);
+        if (Layout.SameLineIfFits(Layout.TextWidth(text)))
+        {
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextColored(color, text);
+        }
+        else
+        {
+            WrappedText.Draw(text, color);
+        }
     }
 }
