@@ -16,6 +16,7 @@ internal sealed class MainWindow : Window
     private static readonly Vector4 ErrorColor = new(1f, 0.5f, 0.4f, 1f);
 
     private readonly Plugin _plugin;
+    private readonly ChannelColors _channelColors = new(Plugin.GameConfig);
 
     // 보내기 탭 상태. 번역·전송 결과는 백그라운드에서 채워진다 (문자열 대입이라 UI 스레드에서 읽어도 안전)
     private string _koreanInput = "";
@@ -89,7 +90,12 @@ internal sealed class MainWindow : Window
 
         foreach (var line in _plugin.ChatListener.Snapshot())
         {
-            WrappedText.Draw($"{line.Time:HH:mm} [{line.Channel}] {line.Sender}: {line.Message}");
+            // 원문은 게임 채팅창과 같은 채널 색, 번역은 구분되게 따로 정한 색으로 그린다
+            var original = $"{line.Time:HH:mm} [{line.Channel}] {line.Sender}: {line.Message}";
+            if (_channelColors.Get(line.Channel) is { } channelColor)
+                WrappedText.Draw(original, channelColor);
+            else
+                WrappedText.Draw(original);
             using var indent = ImRaii.PushIndent();
             switch (line.State)
             {
