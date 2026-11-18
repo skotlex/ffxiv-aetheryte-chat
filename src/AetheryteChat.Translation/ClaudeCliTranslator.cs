@@ -28,6 +28,7 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
     private string? _resolvedPath;
 
     public string Name => "Claude CLI";
+    public string LoginCommand => "claude";
 
     private string Executable =>
         _resolvedPath ??= options.ExecutablePath

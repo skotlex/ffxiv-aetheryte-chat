@@ -20,7 +20,9 @@ internal sealed partial class TranslationQueue : IDisposable
     // 붐비는 채널에서 CLI 프로세스가 한꺼번에 뜨지 않게 동시 실행 수를 묶는다
     private const int MaxConcurrent = 2;
 
-    private readonly ITranslator _translator;
+    // 설정 탭에서 엔진을 바꾸면 갈아 끼운다. 이미 시작한 번역은 시작할 때의 엔진으로 끝난다
+    private volatile ITranslator _translator;
+    private int _loginCheckId; // 엔진을 바꾼 뒤 늦게 끝난 이전 엔진의 로그인 확인 결과를 버리는 데 쓴다
     private readonly SemaphoreSlim _slots = new(MaxConcurrent);
     private readonly CancellationTokenSource _cts = new();
 
@@ -30,13 +32,23 @@ internal sealed partial class TranslationQueue : IDisposable
     public TranslationQueue(ITranslator translator)
     {
         _translator = translator;
-        _ = CheckLoginAsync();
+        _ = CheckLoginAsync(translator, ++_loginCheckId);
     }
 
     public EngineStatus Status { get; private set; } = EngineStatus.Checking;
     public string? StatusDetail { get; private set; }
     public bool AutoTranslate { get; set; } = true;
     public string EngineName => _translator.Name;
+    public string LoginCommand => _translator.LoginCommand;
+
+    /// <summary>번역 엔진을 바꾸고 로그인 상태를 다시 확인한다. UI 스레드에서 부른다.</summary>
+    public void SetTranslator(ITranslator translator)
+    {
+        _translator = translator;
+        Status = EngineStatus.Checking;
+        StatusDetail = null;
+        _ = CheckLoginAsync(translator, ++_loginCheckId);
+    }
 
     /// <summary>게임 스레드에서 불린다. 번역할 줄이면 대기열에 넣고 바로 돌아온다.</summary>
     public void Enqueue(ChatLine line)
@@ -97,20 +109,28 @@ internal sealed partial class TranslationQueue : IDisposable
         _cts.Cancel();
     }
 
-    private async Task CheckLoginAsync()
+    private async Task CheckLoginAsync(ITranslator translator, int id)
     {
+        EngineStatus status;
+        string? detail = null;
         try
         {
-            Status = await _translator.IsLoggedInAsync(_cts.Token) ? EngineStatus.Ready : EngineStatus.NotLoggedIn;
+            status = await translator.IsLoggedInAsync(_cts.Token) ? EngineStatus.Ready : EngineStatus.NotLoggedIn;
         }
         catch (OperationCanceledException)
         {
+            return;
         }
         catch (TranslationException e)
         {
-            Status = EngineStatus.Unavailable;
-            StatusDetail = e.Message;
+            status = EngineStatus.Unavailable;
+            detail = e.Message;
         }
+
+        if (id != _loginCheckId)
+            return; // 그사이 엔진이 바뀌었다
+        StatusDetail = detail;
+        Status = status;
     }
 
     private async Task TranslateAsync(ChatLine line, CancellationToken ct)
@@ -120,7 +140,8 @@ internal sealed partial class TranslationQueue : IDisposable
             await _slots.WaitAsync(ct);
             try
             {
-                var result = await _translator.TranslateAsync(line.Message, TranslationDirection.JaToKo, ct);
+                var translator = _translator;
+                var result = await translator.TranslateAsync(line.Message, TranslationDirection.JaToKo, ct);
                 line.Complete(TranslationState.Done, result.Text);
             }
             finally

@@ -90,8 +90,8 @@ internal sealed class MainWindow : Window
 
         foreach (var line in _plugin.ChatListener.Snapshot())
         {
-            // 원문은 게임 채팅창과 같은 채널 색, 번역은 구분되게 따로 정한 색으로 그린다
-            var original = $"{line.Time:HH:mm} [{line.Channel}] {line.Sender}: {line.Message}";
+            // 원문은 게임 채팅창과 같은 채널 색(채널은 색으로 구분), 번역은 구분되게 따로 정한 색으로 그린다
+            var original = $"[{line.Time:HH:mm}] {line.Sender}: {line.Message}";
             if (_channelColors.Get(line.Channel) is { } channelColor)
                 WrappedText.Draw(original, channelColor);
             else
@@ -334,9 +334,38 @@ internal sealed class MainWindow : Window
             });
     }
 
+    private static readonly (TranslationEngine Engine, string Label)[] Engines =
+    [
+        (TranslationEngine.Claude, "Claude CLI — 빠름 (약 2초)"),
+        (TranslationEngine.Codex, "Codex CLI — 느림 (약 5~6초), 토큰 많이 씀"),
+    ];
+
     private void DrawSettings()
     {
         var config = _plugin.Configuration;
+
+        ImGui.TextUnformatted("번역 도구");
+        var current = Engines.FirstOrDefault(e => e.Engine == config.Engine);
+        ImGui.SetNextItemWidth(320 * ImGuiHelpers.GlobalScale);
+        using (var combo = ImRaii.Combo("##engine", current.Label ?? config.Engine.ToString()))
+        {
+            if (combo.Success)
+            {
+                foreach (var (engine, label) in Engines)
+                {
+                    if (ImGui.Selectable(label, engine == config.Engine) && engine != config.Engine)
+                    {
+                        config.Engine = engine;
+                        config.Save();
+                        _plugin.TranslationQueue.SetTranslator(Plugin.CreateTranslator(engine));
+                    }
+                }
+            }
+        }
+        ImGui.SameLine();
+        DrawEngineStatus(_plugin.TranslationQueue);
+
+        ImGuiHelpers.ScaledDummy(8);
 
         ImGui.TextUnformatted("배경 불투명도");
         var percent = (config.BackgroundOpacity ?? ImGui.GetStyle().Colors[(int)ImGuiCol.WindowBg].W) * 100f;
@@ -373,7 +402,7 @@ internal sealed class MainWindow : Window
         {
             EngineStatus.Checking => ("로그인 확인 중…", DimColor),
             EngineStatus.Ready => ($"{queue.EngineName} 준비됨", DimColor),
-            EngineStatus.NotLoggedIn => ($"{queue.EngineName} 로그인 안 됨 — 터미널에서 claude 로 로그인", ErrorColor),
+            EngineStatus.NotLoggedIn => ($"{queue.EngineName} 로그인 안 됨 — 터미널에서 '{queue.LoginCommand}' 로 로그인", ErrorColor),
             _ => ($"{queue.EngineName} 사용 불가: {queue.StatusDetail}", ErrorColor),
         };
         ImGui.AlignTextToFramePadding();

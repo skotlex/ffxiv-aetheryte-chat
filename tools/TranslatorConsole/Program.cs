@@ -4,7 +4,8 @@
 //   dotnet run --project tools/TranslatorConsole -- ja2ko "零式4層、初見です。よろしくお願いします！"
 //   dotnet run --project tools/TranslatorConsole -- ko2ja --effort low          (줄마다 번역, 빈 줄로 끝)
 //
-// 옵션: --model <name> (기본 haiku), --effort <low|medium|high>, --exe <claude.exe 경로>
+// 옵션: --engine <claude|codex> (기본 claude), --model <name> (claude 기본 haiku),
+//       --effort <low|medium|high> (claude: --effort, codex: reasoning effort), --exe <실행 파일 경로>
 
 using System.Text;
 using AetheryteChat.Translation;
@@ -12,32 +13,55 @@ using AetheryteChat.Translation;
 Console.InputEncoding = Encoding.UTF8;
 Console.OutputEncoding = Encoding.UTF8;
 
-var options = new ClaudeCliOptions();
+string engine = "claude";
+string? model = null, effort = null, exe = null;
 var positional = new List<string>();
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
     {
-        case "--model": options.Model = args[++i]; break;
-        case "--effort": options.Effort = args[++i]; break;
-        case "--exe": options.ExecutablePath = args[++i]; break;
+        case "--engine": engine = args[++i]; break;
+        case "--model": model = args[++i]; break;
+        case "--effort": effort = args[++i]; break;
+        case "--exe": exe = args[++i]; break;
         default: positional.Add(args[i]); break;
     }
 }
 
 if (positional.Count == 0)
 {
-    Console.Error.WriteLine("사용법: TranslatorConsole (auth | ja2ko | ko2ja) [--model m] [--effort e] [--exe path] [문장]");
+    Console.Error.WriteLine("사용법: TranslatorConsole (auth | ja2ko | ko2ja) [--engine claude|codex] [--model m] [--effort e] [--exe path] [문장]");
     return 2;
 }
 
-var translator = new ClaudeCliTranslator(options);
+ITranslator translator;
+string? exePath;
+switch (engine)
+{
+    case "claude":
+        var claude = new ClaudeCliOptions { ExecutablePath = exe, Effort = effort };
+        if (model is not null)
+            claude.Model = model;
+        translator = new ClaudeCliTranslator(claude);
+        exePath = exe ?? ClaudeCliLocator.Find();
+        break;
+    case "codex":
+        var codex = new CodexCliOptions { ExecutablePath = exe, Model = model };
+        if (effort is not null)
+            codex.ReasoningEffort = effort;
+        translator = new CodexCliTranslator(codex);
+        exePath = exe ?? CodexCliLocator.Find();
+        break;
+    default:
+        Console.Error.WriteLine($"알 수 없는 엔진: {engine}");
+        return 2;
+}
 
 try
 {
     if (positional[0] == "auth")
     {
-        Console.WriteLine($"claude.exe: {options.ExecutablePath ?? ClaudeCliLocator.Find() ?? "(못 찾음)"}");
+        Console.WriteLine($"{translator.Name}: {exePath ?? "(못 찾음)"}");
         Console.WriteLine($"로그인: {(await translator.IsLoggedInAsync() ? "됨" : "안 됨")}");
         return 0;
     }
@@ -49,7 +73,7 @@ try
         _ => throw new ArgumentException($"알 수 없는 명령: {positional[0]}"),
     };
 
-    Console.Error.WriteLine($"[{direction}] model={options.Model} effort={options.Effort ?? "(기본)"}");
+    Console.Error.WriteLine($"[{direction}] {translator.Name} model={model ?? "(기본)"} effort={effort ?? "(기본)"}");
 
     if (positional.Count > 1)
     {

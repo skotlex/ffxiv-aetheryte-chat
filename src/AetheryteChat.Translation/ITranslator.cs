@@ -23,6 +23,9 @@ public interface ITranslator
 {
     string Name { get; }
 
+    /// <summary>로그인이 안 됐을 때 터미널에서 칠 명령 (안내용)</summary>
+    string LoginCommand { get; }
+
     /// <summary>모델을 부르지 않고 로그인 상태만 확인한다.</summary>
     Task<bool> IsLoggedInAsync(CancellationToken ct = default);
 

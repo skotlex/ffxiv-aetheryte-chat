@@ -48,7 +48,7 @@ public sealed class Plugin : IDalamudPlugin
             tk.AddGameSymbol(in config);
         }));
 
-        TranslationQueue = new TranslationQueue(new ClaudeCliTranslator(new ClaudeCliOptions()));
+        TranslationQueue = new TranslationQueue(CreateTranslator(Configuration.Engine));
         ChatListener = new ChatListener(ChatGui, TranslationQueue.Enqueue);
         _mainWindow = new MainWindow(this);
         _windowSystem.AddWindow(_mainWindow);
@@ -61,6 +61,12 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw += _windowSystem.Draw;
         PluginInterface.UiBuilder.OpenMainUi += _mainWindow.Toggle;
     }
+
+    internal static ITranslator CreateTranslator(TranslationEngine engine) => engine switch
+    {
+        TranslationEngine.Codex => new CodexCliTranslator(new CodexCliOptions()),
+        _ => new ClaudeCliTranslator(new ClaudeCliOptions()),
+    };
 
     public void Dispose()
     {
