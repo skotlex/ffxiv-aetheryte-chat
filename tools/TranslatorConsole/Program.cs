@@ -4,7 +4,7 @@
 //   dotnet run --project tools/TranslatorConsole -- ja2ko "零式4層、初見です。よろしくお願いします！"
 //   dotnet run --project tools/TranslatorConsole -- ko2ja --effort low          (줄마다 번역, 빈 줄로 끝)
 //
-// 옵션: --engine <claude|codex|papago> (기본 claude), --model <name> (claude 기본 haiku),
+// 옵션: --engine <claude|codex|ollama|papago> (기본 claude, ollama 는 --model 로 모델 지정), --model <name> (claude 기본 haiku),
 //       --effort <low|medium|high> (claude: --effort, codex: reasoning effort), --exe <실행 파일 경로>
 
 using System.Text;
@@ -52,6 +52,13 @@ switch (engine)
         translator = new CodexCliTranslator(codex);
         exePath = exe ?? CodexCliLocator.Find();
         break;
+    case "ollama":
+        var ollama = new OllamaOptions();
+        if (model is not null)
+            ollama.Model = model;
+        translator = new OllamaTranslator(ollama);
+        exePath = ollama.Endpoint;
+        break;
     case "papago":
         translator = new PapagoWebTranslator();
         exePath = "(실행 파일 없음 — 웹 요청)";
@@ -91,6 +98,7 @@ try
 
     async Task TranslateOne(string text)
     {
+        text = text.TrimStart('﻿'); // PowerShell 파이프가 앞에 붙이는 BOM
         try
         {
             var r = await translator.TranslateAsync(text, direction);

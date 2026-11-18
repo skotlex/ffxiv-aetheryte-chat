@@ -25,7 +25,7 @@ public sealed class PapagoWebTranslator : ITranslator
     private DateTime _cooldownUntil = DateTime.MinValue;
 
     public string Name => "Papago (웹)";
-    public string LoginCommand => "";
+    public string NotReadyHint => "";
 
     /// <summary>로그인이 필요 없다.</summary>
     public Task<bool> IsLoggedInAsync(CancellationToken ct = default) => Task.FromResult(true);

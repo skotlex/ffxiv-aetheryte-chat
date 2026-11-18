@@ -48,7 +48,7 @@ public sealed class Plugin : IDalamudPlugin
             tk.AddGameSymbol(in config);
         }));
 
-        TranslationQueue = new TranslationQueue(CreateTranslator(Configuration.Engine));
+        TranslationQueue = new TranslationQueue(CreateTranslator());
         ChatListener = new ChatListener(ChatGui, TranslationQueue.Enqueue);
         _mainWindow = new MainWindow(this);
         _windowSystem.AddWindow(_mainWindow);
@@ -62,10 +62,12 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi += _mainWindow.Toggle;
     }
 
-    internal static ITranslator CreateTranslator(TranslationEngine engine) => engine switch
+    /// <summary>설정의 번역 도구로 엔진을 만든다</summary>
+    internal ITranslator CreateTranslator() => Configuration.Engine switch
     {
         TranslationEngine.Codex => new CodexCliTranslator(new CodexCliOptions()),
         TranslationEngine.Papago => new PapagoWebTranslator(),
+        TranslationEngine.Ollama => new OllamaTranslator(new OllamaOptions { Model = Configuration.OllamaModel }),
         _ => new ClaudeCliTranslator(new ClaudeCliOptions()),
     };
 

@@ -338,8 +338,11 @@ internal sealed class MainWindow : Window
     [
         (TranslationEngine.Claude, "Claude CLI — 빠름 (약 2초)"),
         (TranslationEngine.Codex, "Codex CLI — 느림 (약 5~6초), 토큰 많이 씀"),
-        (TranslationEngine.Papago, "Papago (웹) — 로그인 불필요, 비공식 경로라 막힐 수 있음, 게임 용어 약함"),
+        (TranslationEngine.Ollama, "Ollama (로컬) — 가장 빠르나 (약 1초) GPU를 사용"),
+        (TranslationEngine.Papago, "Papago (웹) — 막힐 수 있으며 게임 용어에 약함"),
     ];
+
+    private string _ollamaModelInput = "";
 
     private void DrawSettings()
     {
@@ -358,13 +361,29 @@ internal sealed class MainWindow : Window
                     {
                         config.Engine = engine;
                         config.Save();
-                        _plugin.TranslationQueue.SetTranslator(Plugin.CreateTranslator(engine));
+                        _plugin.TranslationQueue.SetTranslator(_plugin.CreateTranslator());
                     }
                 }
             }
         }
         ImGui.SameLine();
         DrawEngineStatus(_plugin.TranslationQueue);
+
+        if (config.Engine == TranslationEngine.Ollama)
+        {
+            // 모델 이름은 입력을 마쳤을 때(Enter 또는 칸을 벗어날 때) 적용한다 — 글자마다 엔진을 바꾸지 않게
+            if (_ollamaModelInput.Length == 0)
+                _ollamaModelInput = config.OllamaModel;
+            ImGui.SetNextItemWidth(200 * ImGuiHelpers.GlobalScale);
+            ImGui.InputTextWithHint("모델##ollamaModel", "gemma3:12b", ref _ollamaModelInput, 100);
+            if (ImGui.IsItemDeactivatedAfterEdit() && _ollamaModelInput.Trim() is { Length: > 0 } model && model != config.OllamaModel)
+            {
+                config.OllamaModel = model;
+                config.Save();
+                _plugin.TranslationQueue.SetTranslator(_plugin.CreateTranslator());
+            }
+            WrappedText.Draw("2026-11-18 비교에서는 gemma3:12b 가 한→일 게임 용어까지 맞았다. 모델은 'ollama pull 이름' 으로 받는다.", DimColor);
+        }
 
         ImGuiHelpers.ScaledDummy(8);
 
@@ -403,7 +422,7 @@ internal sealed class MainWindow : Window
         {
             EngineStatus.Checking => ("로그인 확인 중…", DimColor),
             EngineStatus.Ready => ($"{queue.EngineName} 준비됨", DimColor),
-            EngineStatus.NotLoggedIn => ($"{queue.EngineName} 로그인 안 됨 — 터미널에서 '{queue.LoginCommand}' 로 로그인", ErrorColor),
+            EngineStatus.NotLoggedIn => ($"{queue.EngineName} {queue.NotReadyHint}", ErrorColor),
             _ => ($"{queue.EngineName} 사용 불가: {queue.StatusDetail}", ErrorColor),
         };
         ImGui.AlignTextToFramePadding();

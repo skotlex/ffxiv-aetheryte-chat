@@ -29,7 +29,7 @@ public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator
     private string? _resolvedPath;
 
     public string Name => "Codex CLI";
-    public string LoginCommand => "codex login";
+    public string NotReadyHint => "로그인 안 됨 — 터미널에서 'codex login' 으로 로그인";
 
     private string Executable =>
         _resolvedPath ??= options.ExecutablePath

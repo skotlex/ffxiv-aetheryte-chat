@@ -39,7 +39,7 @@ internal sealed partial class TranslationQueue : IDisposable
     public string? StatusDetail { get; private set; }
     public bool AutoTranslate { get; set; } = true;
     public string EngineName => _translator.Name;
-    public string LoginCommand => _translator.LoginCommand;
+    public string NotReadyHint => _translator.NotReadyHint;
 
     /// <summary>번역 엔진을 바꾸고 로그인 상태를 다시 확인한다. UI 스레드에서 부른다.</summary>
     public void SetTranslator(ITranslator translator)

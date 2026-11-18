@@ -28,7 +28,7 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
     private string? _resolvedPath;
 
     public string Name => "Claude CLI";
-    public string LoginCommand => "claude";
+    public string NotReadyHint => "로그인 안 됨 — 터미널에서 'claude' 로 로그인";
 
     private string Executable =>
         _resolvedPath ??= options.ExecutablePath
