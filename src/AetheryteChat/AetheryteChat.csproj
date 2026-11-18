@@ -15,4 +15,8 @@ Square Enix 와 관련 없는 비공식 도구.</Description>
     <Nullable>enable</Nullable>
     <RootNamespace>AetheryteChat</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AetheryteChat.Translation\AetheryteChat.Translation.csproj" />
+  </ItemGroup>
 </Project>

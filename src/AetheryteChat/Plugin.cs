@@ -6,6 +6,7 @@ using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using AetheryteChat.Translation;
 using AetheryteChat.Windows;
 
 namespace AetheryteChat;
@@ -24,6 +25,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly MainWindow _mainWindow;
 
     internal ChatListener ChatListener { get; }
+    internal TranslationQueue TranslationQueue { get; }
 
     /// <summary>
     /// 게임 폰트에는 한글이 없어 ImGui 창에서 따로 불러온다 (DESIGN 3절).
@@ -40,7 +42,8 @@ public sealed class Plugin : IDalamudPlugin
             tk.AttachWindowsDefaultFont(CultureInfo.GetCultureInfo("ko-KR"), in config, 400, 5, 0);
         }));
 
-        ChatListener = new ChatListener(ChatGui);
+        TranslationQueue = new TranslationQueue(new ClaudeCliTranslator(new ClaudeCliOptions()));
+        ChatListener = new ChatListener(ChatGui, TranslationQueue.Enqueue);
         _mainWindow = new MainWindow(this);
         _windowSystem.AddWindow(_mainWindow);
 
@@ -61,6 +64,7 @@ public sealed class Plugin : IDalamudPlugin
 
         _windowSystem.RemoveAllWindows();
         ChatListener.Dispose();
+        TranslationQueue.Dispose();
         KoreanFont.Dispose();
     }
 }

@@ -55,21 +55,63 @@ internal sealed class MainWindow : Window
         }
     }
 
+    private static readonly Vector4 TranslationColor = new(0.55f, 0.85f, 1f, 1f);
+    private static readonly Vector4 DimColor = new(0.6f, 0.6f, 0.6f, 1f);
+    private static readonly Vector4 ErrorColor = new(1f, 0.5f, 0.4f, 1f);
+
     private void DrawReceived()
     {
+        var queue = _plugin.TranslationQueue;
+
         if (ImGui.Button("지우기"))
             _plugin.ChatListener.Clear();
+        ImGui.SameLine();
+        var auto = queue.AutoTranslate;
+        if (ImGui.Checkbox("자동 번역", ref auto))
+            queue.AutoTranslate = auto;
+        ImGui.SameLine();
+        DrawEngineStatus(queue);
 
         using var child = ImRaii.Child("##log", Vector2.Zero, true);
         if (!child.Success)
             return;
 
         foreach (var line in _plugin.ChatListener.Snapshot())
+        {
             ImGui.TextWrapped($"{line.Time:HH:mm} [{line.Channel}] {line.Sender}: {line.Message}");
+            using var indent = ImRaii.PushIndent();
+            switch (line.State)
+            {
+                case TranslationState.Pending:
+                    ImGui.TextColored(DimColor, "… 번역 중");
+                    break;
+                case TranslationState.Done:
+                    using (ImRaii.PushColor(ImGuiCol.Text, TranslationColor))
+                        ImGui.TextWrapped($"→ {line.Result}");
+                    break;
+                case TranslationState.Failed:
+                    using (ImRaii.PushColor(ImGuiCol.Text, ErrorColor))
+                        ImGui.TextWrapped($"번역 실패: {line.Result}");
+                    break;
+            }
+        }
 
         // 맨 아래에 있으면 새 줄을 따라간다
         if (ImGui.GetScrollY() >= ImGui.GetScrollMaxY())
             ImGui.SetScrollHereY(1.0f);
+    }
+
+    private static void DrawEngineStatus(TranslationQueue queue)
+    {
+        var (text, color) = queue.Status switch
+        {
+            EngineStatus.Checking => ("로그인 확인 중…", DimColor),
+            EngineStatus.Ready => ($"{queue.EngineName} 준비됨", DimColor),
+            EngineStatus.NotLoggedIn => ($"{queue.EngineName} 로그인 안 됨 — 터미널에서 claude 로 로그인", ErrorColor),
+            _ => ($"{queue.EngineName} 사용 불가: {queue.StatusDetail}", ErrorColor),
+        };
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextColored(color, text);
     }
 
     private void DrawKoreanInput()
