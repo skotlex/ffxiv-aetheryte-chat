@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AetheryteChat.Translation/AetheryteChat.Translation.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/TranslatorConsole/TranslatorConsole.csproj" />
+  </Folder>
+</Solution>
