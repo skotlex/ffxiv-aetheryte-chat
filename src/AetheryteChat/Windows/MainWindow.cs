@@ -357,8 +357,6 @@ internal sealed class MainWindow : Window
         (TranslationEngine.Papago, "Papago (웹) — 막힐 수 있으며 게임 용어에 약함"),
     ];
 
-    private string _ollamaModelInput = "";
-
     private void DrawSettings()
     {
         var config = _plugin.Configuration;
@@ -383,22 +381,6 @@ internal sealed class MainWindow : Window
         }
         ImGui.SameLine();
         DrawEngineStatus(_plugin.TranslationQueue);
-
-        if (config.Engine == TranslationEngine.Ollama)
-        {
-            // 모델 이름은 입력을 마쳤을 때(Enter 또는 칸을 벗어날 때) 적용한다 — 글자마다 엔진을 바꾸지 않게
-            if (_ollamaModelInput.Length == 0)
-                _ollamaModelInput = config.OllamaModel;
-            ImGui.SetNextItemWidth(200 * ImGuiHelpers.GlobalScale);
-            ImGui.InputTextWithHint("모델##ollamaModel", "gemma3:12b", ref _ollamaModelInput, 100);
-            if (ImGui.IsItemDeactivatedAfterEdit() && _ollamaModelInput.Trim() is { Length: > 0 } model && model != config.OllamaModel)
-            {
-                config.OllamaModel = model;
-                config.Save();
-                _plugin.TranslationQueue.SetTranslator(_plugin.CreateTranslator());
-            }
-            WrappedText.Draw("2026-11-18 비교에서는 gemma3:12b 가 한→일 게임 용어까지 맞았다. 모델은 'ollama pull 이름' 으로 받는다.", DimColor);
-        }
 
         ImGuiHelpers.ScaledDummy(8);
 

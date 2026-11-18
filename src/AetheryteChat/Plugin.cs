@@ -67,7 +67,8 @@ public sealed class Plugin : IDalamudPlugin
     {
         TranslationEngine.Codex => new CodexCliTranslator(new CodexCliOptions()),
         TranslationEngine.Papago => new PapagoWebTranslator(),
-        TranslationEngine.Ollama => new OllamaTranslator(new OllamaOptions { Model = Configuration.OllamaModel }),
+        // 모델은 고정(OllamaOptions.Model 기본값 gemma3:12b). 더 나은 모델이 나오면 그때 바꾼다 (DESIGN 6.2)
+        TranslationEngine.Ollama => new OllamaTranslator(new OllamaOptions()),
         _ => new ClaudeCliTranslator(new ClaudeCliOptions()),
     };
 

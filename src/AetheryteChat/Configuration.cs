@@ -30,8 +30,5 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>번역 도구. Claude CLI 가 주력이고 Codex CLI 는 느리지만 대안 (DESIGN 4절)</summary>
     public TranslationEngine Engine { get; set; } = TranslationEngine.Claude;
 
-    /// <summary>Ollama 를 고를 때 쓸 모델 (ollama pull 로 받아 둔 이름)</summary>
-    public string OllamaModel { get; set; } = "gemma3:12b";
-
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 }
