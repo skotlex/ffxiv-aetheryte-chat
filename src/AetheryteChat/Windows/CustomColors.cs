@@ -17,7 +17,7 @@ public enum ControlColorGroup
 /// <summary>
 /// 이 창에만 적용하는 컨트롤 색 (Dalamud 스타일에는 저장되지 않는다).
 /// 묶음마다 기본색 하나를 고르면 마우스를 올렸을 때·눌렀을 때 색은 기본색을 조금씩 밝혀 만든다.
-/// 알파는 지금 스타일의 값을 그대로 쓴다.
+/// 불투명도는 묶음마다 따로 정하고, 정하지 않으면 지금 스타일의 값을 그대로 쓴다.
 /// </summary>
 internal static class CustomColors
 {
@@ -35,23 +35,30 @@ internal static class CustomColors
         (ControlColorGroup.Text, "글자"),
     ];
 
-    /// <summary>설정 탭에서 색 고르기를 시작할 때 보여 줄 지금 스타일의 기본색</summary>
-    public static Vector3 CurrentBase(ControlColorGroup group)
-    {
-        var c = ImGui.GetStyle().Colors[(int)BaseCol(group)];
-        return new Vector3(c.X, c.Y, c.Z);
-    }
+    /// <summary>설정 탭에서 보여 줄 지금 색(RGB)과 불투명도(W). 이 창 안에서 부르면 정해 둔 값이 이미 반영돼 있다</summary>
+    public static Vector4 CurrentBase(ControlColorGroup group) => ImGui.GetStyle().Colors[(int)BaseCol(group)];
 
-    /// <summary>정해 둔 색을 push 하고 push 한 개수를 돌려준다. PostDraw 에서 그만큼 pop 한다</summary>
-    public static int Push(IReadOnlyDictionary<ControlColorGroup, Vector3> colors)
+    /// <summary>
+    /// 정해 둔 색·불투명도를 push 하고 push 한 개수를 돌려준다. PostDraw 에서 그만큼 pop 한다.
+    /// 색만 정했으면 불투명도는 스타일 값, 불투명도만 정했으면 색은 스타일 값(마우스 올림·누름 색도 스타일 그대로)을 쓴다.
+    /// </summary>
+    public static int Push(
+        IReadOnlyDictionary<ControlColorGroup, Vector3> colors,
+        IReadOnlyDictionary<ControlColorGroup, float> opacities)
     {
         var count = 0;
-        foreach (var (group, rgb) in colors)
+        foreach (var (group, _) in Groups)
         {
+            var hasColor = colors.TryGetValue(group, out var rgb);
+            var hasOpacity = opacities.TryGetValue(group, out var opacity);
+            if (!hasColor && !hasOpacity)
+                continue;
+
             foreach (var (col, adjust) in Members(group))
             {
-                var alpha = ImGui.GetStyle().Colors[(int)col].W;
-                ImGui.PushStyleColor(col, new Vector4(adjust(rgb), alpha));
+                var style = ImGui.GetStyle().Colors[(int)col];
+                var color = hasColor ? adjust(rgb) : new Vector3(style.X, style.Y, style.Z);
+                ImGui.PushStyleColor(col, new Vector4(color, hasOpacity ? opacity : style.W));
                 count++;
             }
         }

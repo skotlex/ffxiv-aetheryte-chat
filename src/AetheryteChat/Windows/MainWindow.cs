@@ -64,7 +64,7 @@ internal sealed class MainWindow : Window
             ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(rgb, alpha));
             _pushedColorCount++;
         }
-        _pushedColorCount += CustomColors.Push(_plugin.Configuration.ControlColors);
+        _pushedColorCount += CustomColors.Push(_plugin.Configuration.ControlColors, _plugin.Configuration.ControlOpacity);
     }
 
     public override void PostDraw()
@@ -433,73 +433,123 @@ internal sealed class MainWindow : Window
 
         ImGuiHelpers.ScaledDummy(8);
 
-        ImGui.TextUnformatted("배경 색");
-        // 지정하지 않았으면 지금 스타일의 배경색에서 시작한다 (Draw 안이라 고른 스타일이 이미 적용돼 있다)
-        var styleBg = ImGui.GetStyle().Colors[(int)ImGuiCol.WindowBg];
-        var color = config.BackgroundColor ?? new Vector3(styleBg.X, styleBg.Y, styleBg.Z);
-        if (ImGui.ColorEdit3("##bgColor", ref color, ImGuiColorEditFlags.NoInputs))
-            config.BackgroundColor = color;
+        DrawColorSettings(config);
+    }
+
+    /// <summary>
+    /// 배경·컨트롤마다 [색] [불투명도] [초기화] 이름. 맨 위 일괄 불투명도는 배경과, 글자를 뺀 모든 묶음의 불투명도를 한 번에 맞춘다.
+    /// 지정하지 않은 값은 지금 스타일 값에서 시작한다 (Draw 안이라 고른 스타일·정해 둔 값이 이미 적용돼 있다)
+    /// </summary>
+    private static void DrawColorSettings(Configuration config)
+    {
+        ImGui.TextUnformatted("색·불투명도");
+
+        // 일괄 불투명도 — 움직이면 각 줄의 불투명도를 이 값으로 맞춘다. 맞춘 뒤 줄마다 따로 다듬을 수 있다
+        var master = (config.MasterOpacity ?? 1f) * 100f;
+        ImGui.SetNextItemWidth(OpacitySliderWidth);
+        if (ImGui.SliderFloat("##masterAlpha", ref master, 0f, 100f, "%.0f%%"))
+        {
+            var value = Math.Clamp(master / 100f, 0f, 1f);
+            config.MasterOpacity = value;
+            config.BackgroundOpacity = value;
+            foreach (var (group, _) in CustomColors.Groups)
+            {
+                if (group != ControlColorGroup.Text)
+                    config.ControlOpacity[group] = value;
+            }
+        }
         if (ImGui.IsItemDeactivatedAfterEdit())
             config.Save();
         ImGui.SameLine();
-        using (ImRaii.Disabled(config.BackgroundColor is null))
+        // 불투명도만 되돌린다 — 골라 둔 색은 줄마다의 초기화로만 지운다
+        var anyOpacity = config.MasterOpacity is not null || config.BackgroundOpacity is not null || config.ControlOpacity.Count > 0;
+        using (ImRaii.Disabled(!anyOpacity))
         {
-            if (ImGui.Button("초기화##bgColor"))
+            if (ImGui.Button("초기화##master"))
+            {
+                config.MasterOpacity = null;
+                config.BackgroundOpacity = null;
+                config.ControlOpacity.Clear();
+                config.Save();
+            }
+        }
+        ImGui.SameLine();
+        ImGui.TextUnformatted("일괄 불투명도 (글자 제외)");
+
+        ImGuiHelpers.ScaledDummy(2);
+
+        // 배경: 색은 WindowBg, 불투명도는 Window.BgAlpha (PreDraw)
+        var styleBg = ImGui.GetStyle().Colors[(int)ImGuiCol.WindowBg];
+        DrawColorRow(
+            "bg", "배경",
+            config.BackgroundColor ?? new Vector3(styleBg.X, styleBg.Y, styleBg.Z),
+            config.BackgroundOpacity ?? styleBg.W,
+            config.BackgroundColor is not null || config.BackgroundOpacity is not null,
+            c => config.BackgroundColor = c,
+            a => config.BackgroundOpacity = a,
+            () =>
             {
                 config.BackgroundColor = null;
-                config.Save();
-            }
-        }
+                config.BackgroundOpacity = null;
+            },
+            config);
 
-        ImGuiHelpers.ScaledDummy(8);
-
-        ImGui.TextUnformatted("컨트롤 색");
         foreach (var (group, label) in CustomColors.Groups)
         {
-            // 지정하지 않았으면 지금 스타일의 색에서 시작한다 (Draw 안이라 고른 스타일이 이미 적용돼 있다)
-            var hasColor = config.ControlColors.TryGetValue(group, out var groupColor);
-            if (!hasColor)
-                groupColor = CustomColors.CurrentBase(group);
-            if (ImGui.ColorEdit3($"##ctl{group}", ref groupColor, ImGuiColorEditFlags.NoInputs))
-                config.ControlColors[group] = groupColor;
-            if (ImGui.IsItemDeactivatedAfterEdit())
-                config.Save();
-            ImGui.SameLine();
-            using (ImRaii.Disabled(!hasColor))
-            {
-                if (ImGui.Button($"초기화##ctl{group}"))
+            var current = CustomColors.CurrentBase(group);
+            var hasColor = config.ControlColors.TryGetValue(group, out var rgb);
+            var hasOpacity = config.ControlOpacity.TryGetValue(group, out var opacity);
+            DrawColorRow(
+                group.ToString(), label,
+                hasColor ? rgb : new Vector3(current.X, current.Y, current.Z),
+                hasOpacity ? opacity : current.W,
+                hasColor || hasOpacity,
+                c => config.ControlColors[group] = c,
+                a => config.ControlOpacity[group] = a,
+                () =>
                 {
                     config.ControlColors.Remove(group);
-                    config.Save();
-                }
-            }
-            ImGui.SameLine();
-            ImGui.TextUnformatted(label);
-        }
-
-        ImGuiHelpers.ScaledDummy(8);
-
-        ImGui.TextUnformatted("배경 불투명도");
-        var percent = (config.BackgroundOpacity ?? ImGui.GetStyle().Colors[(int)ImGuiCol.WindowBg].W) * 100f;
-        ImGui.SetNextItemWidth(220 * ImGuiHelpers.GlobalScale);
-        if (ImGui.SliderFloat("##bgAlpha", ref percent, 0f, 100f, "%.0f%%"))
-            config.BackgroundOpacity = Math.Clamp(percent / 100f, 0f, 1f);
-        if (ImGui.IsItemDeactivatedAfterEdit())
-            config.Save();
-
-        ImGui.SameLine();
-        using (ImRaii.Disabled(config.BackgroundOpacity is null))
-        {
-            if (ImGui.Button("초기화##bgAlpha"))
-            {
-                config.BackgroundOpacity = null;
-                config.Save();
-            }
+                    config.ControlOpacity.Remove(group);
+                },
+                config);
         }
 
         WrappedText.Draw(
-            "글자는 그대로 두고 배경만 투명해진다. 제목줄 ≡ 메뉴의 '불투명도' 는 글자까지 흐려지므로 100% 로 둔다.",
+            "이 창에만 적용된다. 제목줄 ≡ 메뉴의 '불투명도' 는 글자까지 흐려지므로 100% 로 둔다.",
             DimColor);
+    }
+
+    private static float OpacitySliderWidth => 120 * ImGuiHelpers.GlobalScale;
+
+    /// <summary>[색] [불투명도] [초기화] 이름 한 줄. 값을 바꾸면 setColor·setOpacity 로 넣고, 손을 떼면 저장한다</summary>
+    private static void DrawColorRow(
+        string id, string label, Vector3 color, float opacity, bool customized,
+        Action<Vector3> setColor, Action<float> setOpacity, Action reset, Configuration config)
+    {
+        if (ImGui.ColorEdit3($"##color{id}", ref color, ImGuiColorEditFlags.NoInputs))
+            setColor(color);
+        if (ImGui.IsItemDeactivatedAfterEdit())
+            config.Save();
+
+        ImGui.SameLine();
+        var percent = opacity * 100f;
+        ImGui.SetNextItemWidth(OpacitySliderWidth);
+        if (ImGui.SliderFloat($"##alpha{id}", ref percent, 0f, 100f, "%.0f%%"))
+            setOpacity(Math.Clamp(percent / 100f, 0f, 1f));
+        if (ImGui.IsItemDeactivatedAfterEdit())
+            config.Save();
+
+        ImGui.SameLine();
+        using (ImRaii.Disabled(!customized))
+        {
+            if (ImGui.Button($"초기화##reset{id}"))
+            {
+                reset();
+                config.Save();
+            }
+        }
+        ImGui.SameLine();
+        ImGui.TextUnformatted(label);
     }
 
     private void SetStatus(string text, bool isError)

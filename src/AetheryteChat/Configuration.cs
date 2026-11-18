@@ -33,6 +33,15 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>이 창에만 적용하는 컨트롤 색 (묶음마다 기본색 RGB). 없는 묶음은 스타일 색을 따른다</summary>
     public Dictionary<Windows.ControlColorGroup, System.Numerics.Vector3> ControlColors { get; set; } = new();
 
+    /// <summary>이 창에만 적용하는 컨트롤 불투명도(0~1, 묶음마다). 없는 묶음은 스타일 값을 따른다</summary>
+    public Dictionary<Windows.ControlColorGroup, float> ControlOpacity { get; set; } = new();
+
+    /// <summary>
+    /// 마지막으로 맞춘 일괄 불투명도(0~1). 움직이면 배경과, 글자를 뺀 모든 묶음의 불투명도를 이 값으로 맞춘다.
+    /// null 이면 한 번도 맞추지 않음
+    /// </summary>
+    public float? MasterOpacity { get; set; }
+
     /// <summary>이 창에만 적용할 Dalamud 스타일 이름 (스타일 편집기에서 저장한 것 또는 내장). null 이면 Dalamud 설정을 따른다</summary>
     public string? WindowStyleName { get; set; }
 
