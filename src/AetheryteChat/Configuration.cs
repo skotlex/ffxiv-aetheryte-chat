@@ -30,6 +30,9 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public System.Numerics.Vector3? BackgroundColor { get; set; }
 
+    /// <summary>이 창에만 적용하는 컨트롤 색 (묶음마다 기본색 RGB). 없는 묶음은 스타일 색을 따른다</summary>
+    public Dictionary<Windows.ControlColorGroup, System.Numerics.Vector3> ControlColors { get; set; } = new();
+
     /// <summary>이 창에만 적용할 Dalamud 스타일 이름 (스타일 편집기에서 저장한 것 또는 내장). null 이면 Dalamud 설정을 따른다</summary>
     public string? WindowStyleName { get; set; }
 

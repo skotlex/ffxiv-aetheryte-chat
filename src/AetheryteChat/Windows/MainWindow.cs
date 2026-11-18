@@ -21,7 +21,7 @@ internal sealed class MainWindow : Window
     private readonly ChannelColors _channelColors = new(Plugin.GameConfig);
     private readonly WindowStyles _windowStyles = new();
     private StyleModel? _pushedStyle; // PreDraw 에서 push 한 스타일 — PostDraw 에서 같은 것을 pop 한다
-    private bool _pushedBackground;   // PreDraw 에서 배경색을 push 했는지
+    private int _pushedColorCount;    // PreDraw 에서 push 한 색 개수 (배경 + 컨트롤 색)
 
     // 보내기 탭 상태. 번역·전송 결과는 백그라운드에서 채워진다 (문자열 대입이라 UI 스레드에서 읽어도 안전)
     private string _koreanInput = "";
@@ -56,21 +56,23 @@ internal sealed class MainWindow : Window
         _pushedStyle = _windowStyles.Find(_plugin.Configuration.WindowStyleName);
         _pushedStyle?.Push();
 
-        // 배경색은 고른 스타일 위에 덮는다. 알파는 스타일 값을 두고 BgAlpha(배경 불투명도)가 다시 정한다
+        // 배경색·컨트롤 색은 고른 스타일 위에 덮는다. 알파는 스타일 값을 두고, 배경은 BgAlpha(배경 불투명도)가 다시 정한다
+        _pushedColorCount = 0;
         if (_plugin.Configuration.BackgroundColor is { } rgb)
         {
             var alpha = ImGui.GetStyle().Colors[(int)ImGuiCol.WindowBg].W;
             ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(rgb, alpha));
-            _pushedBackground = true;
+            _pushedColorCount++;
         }
+        _pushedColorCount += CustomColors.Push(_plugin.Configuration.ControlColors);
     }
 
     public override void PostDraw()
     {
-        if (_pushedBackground)
+        if (_pushedColorCount > 0)
         {
-            ImGui.PopStyleColor();
-            _pushedBackground = false;
+            ImGui.PopStyleColor(_pushedColorCount);
+            _pushedColorCount = 0;
         }
         _pushedStyle?.Pop();
         _pushedStyle = null;
@@ -448,8 +450,32 @@ internal sealed class MainWindow : Window
                 config.Save();
             }
         }
-        ImGui.SameLine();
-        ImGui.TextColored(DimColor, config.BackgroundColor is null ? "스타일의 배경색" : "이 창에만 적용");
+
+        ImGuiHelpers.ScaledDummy(8);
+
+        ImGui.TextUnformatted("컨트롤 색");
+        foreach (var (group, label) in CustomColors.Groups)
+        {
+            // 지정하지 않았으면 지금 스타일의 색에서 시작한다 (Draw 안이라 고른 스타일이 이미 적용돼 있다)
+            var hasColor = config.ControlColors.TryGetValue(group, out var groupColor);
+            if (!hasColor)
+                groupColor = CustomColors.CurrentBase(group);
+            if (ImGui.ColorEdit3($"##ctl{group}", ref groupColor, ImGuiColorEditFlags.NoInputs))
+                config.ControlColors[group] = groupColor;
+            if (ImGui.IsItemDeactivatedAfterEdit())
+                config.Save();
+            ImGui.SameLine();
+            using (ImRaii.Disabled(!hasColor))
+            {
+                if (ImGui.Button($"초기화##ctl{group}"))
+                {
+                    config.ControlColors.Remove(group);
+                    config.Save();
+                }
+            }
+            ImGui.SameLine();
+            ImGui.TextUnformatted(label);
+        }
 
         ImGuiHelpers.ScaledDummy(8);
 
