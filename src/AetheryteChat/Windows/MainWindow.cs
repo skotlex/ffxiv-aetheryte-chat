@@ -2,6 +2,8 @@ using System.Numerics;
 using System.Text;
 using AetheryteChat.Translation;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface;
+using Dalamud.Interface.Style;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
@@ -17,6 +19,8 @@ internal sealed class MainWindow : Window
 
     private readonly Plugin _plugin;
     private readonly ChannelColors _channelColors = new(Plugin.GameConfig);
+    private readonly WindowStyles _windowStyles = new();
+    private StyleModel? _pushedStyle; // PreDraw 에서 push 한 스타일 — PostDraw 에서 같은 것을 pop 한다
 
     // 보내기 탭 상태. 번역·전송 결과는 백그라운드에서 채워진다 (문자열 대입이라 UI 스레드에서 읽어도 안전)
     private string _koreanInput = "";
@@ -45,6 +49,17 @@ internal sealed class MainWindow : Window
     {
         // 배경만 투명하게 한다 (Dalamud 제목줄 메뉴의 불투명도는 글자까지 흐려진다)
         BgAlpha = _plugin.Configuration.BackgroundOpacity;
+
+        // 이 창에만 다른 스타일을 쓴다. Dalamud 는 PreDraw 뒤에 현재 스타일에서 제목줄 색을 읽어 push 하고,
+        // 창을 닫은(End) 뒤 PostDraw 를 부르므로 여기서 push 하고 PostDraw 에서 pop 하면 이 창만 감싼다 (WindowHost.cs)
+        _pushedStyle = _windowStyles.Find(_plugin.Configuration.WindowStyleName);
+        _pushedStyle?.Push();
+    }
+
+    public override void PostDraw()
+    {
+        _pushedStyle?.Pop();
+        _pushedStyle = null;
     }
 
     public override void Draw()
@@ -384,6 +399,39 @@ internal sealed class MainWindow : Window
             }
             WrappedText.Draw("2026-11-18 비교에서는 gemma3:12b 가 한→일 게임 용어까지 맞았다. 모델은 'ollama pull 이름' 으로 받는다.", DimColor);
         }
+
+        ImGuiHelpers.ScaledDummy(8);
+
+        ImGui.TextUnformatted("창 스타일");
+        const string followDalamud = "Dalamud 설정 따르기";
+        ImGui.SetNextItemWidth(320 * ImGuiHelpers.GlobalScale);
+        using (var combo = ImRaii.Combo("##windowStyle", config.WindowStyleName ?? followDalamud))
+        {
+            if (combo.Success)
+            {
+                if (ImGui.Selectable(followDalamud, config.WindowStyleName is null) && config.WindowStyleName is not null)
+                {
+                    config.WindowStyleName = null;
+                    config.Save();
+                }
+                foreach (var style in _windowStyles.All)
+                {
+                    if (ImGui.Selectable(style.Name, style.Name == config.WindowStyleName) && style.Name != config.WindowStyleName)
+                    {
+                        config.WindowStyleName = style.Name;
+                        config.Save();
+                    }
+                }
+            }
+        }
+        if (config.WindowStyleName is not null && _windowStyles.Find(config.WindowStyleName) is null)
+            WrappedText.Draw($"'{config.WindowStyleName}' 스타일을 찾지 못해 Dalamud 설정을 따른다.", ErrorColor);
+        // 지금 Dalamud 에는 스타일 편집기를 여는 명령어가 없어(/xlstyle 없음) 설정의 Look & Feel 탭으로 보낸다
+        if (ImGui.Button("Dalamud 스타일 편집 열기"))
+            Plugin.PluginInterface.OpenDalamudSettingsTo(SettingsOpenKind.LookAndFeel);
+        WrappedText.Draw(
+            "이 창에만 적용된다. 버튼을 눌러 Look & Feel 탭의 'Open Style Editor' 로 스타일을 만들어 저장한 뒤 여기서 고른다.",
+            DimColor);
 
         ImGuiHelpers.ScaledDummy(8);
 

@@ -24,6 +24,9 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public float? BackgroundOpacity { get; set; }
 
+    /// <summary>이 창에만 적용할 Dalamud 스타일 이름 (스타일 편집기에서 저장한 것 또는 내장). null 이면 Dalamud 설정을 따른다</summary>
+    public string? WindowStyleName { get; set; }
+
     /// <summary>번역 도구. Claude CLI 가 주력이고 Codex CLI 는 느리지만 대안 (DESIGN 4절)</summary>
     public TranslationEngine Engine { get; set; } = TranslationEngine.Claude;
 
