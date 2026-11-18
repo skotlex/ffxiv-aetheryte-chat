@@ -28,15 +28,15 @@ internal static class ChatSender
     public static string? Validate(string prefix, string text)
     {
         if (string.IsNullOrWhiteSpace(text))
-            return "빈 글은 보낼 수 없다.";
+            return "빈 글은 보낼 수 없습니다.";
         if (text.Contains('\n') || text.Contains('\r'))
-            return "줄바꿈은 보낼 수 없다.";
+            return "줄바꿈은 보낼 수 없습니다.";
         if (text.TrimStart().StartsWith('/'))
-            return "명령어(/…)는 보내지 않는다. 채널은 목록에서 고른다.";
+            return "명령어(/…)는 보낼 수 없습니다. 채널은 목록에서 골라 주세요.";
 
         var bytes = Encoding.UTF8.GetByteCount(BuildLine(prefix, text));
         if (bytes > MaxBytes)
-            return $"너무 길다 (채널 명령 포함 {bytes}바이트, 한도 {MaxBytes}바이트).";
+            return $"너무 깁니다 (채널 명령 포함 {bytes}바이트, 한도 {MaxBytes}바이트).";
         return null;
     }
 
@@ -53,7 +53,7 @@ internal static class ChatSender
             str->SanitizeString(Allowed, null);
             var sanitized = str->ToString();
             if (sanitized != line)
-                throw new InvalidOperationException($"게임이 허용하지 않는 글자가 들어 있다. 정리 후: {sanitized}");
+                throw new InvalidOperationException($"게임이 허용하지 않는 글자가 들어 있습니다. 정리 후: {sanitized}");
 
             UIModule.Instance()->ProcessChatBoxEntry(str, IntPtr.Zero, false);
         }

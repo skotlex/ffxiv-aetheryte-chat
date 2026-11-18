@@ -30,12 +30,12 @@ public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator
 
     public string Name => "Codex CLI";
     public string ShortName => options.Model is { Length: > 0 } model ? $"Codex {model}" : "Codex";
-    public string NotReadyHint => "로그인 안 됨 — 터미널에서 'codex login' 으로 로그인";
+    public string NotReadyHint => "로그인 안 됨 — 터미널에서 'codex login'으로 로그인해 주세요";
 
     private string Executable =>
         _resolvedPath ??= options.ExecutablePath
             ?? CodexCliLocator.Find()
-            ?? throw new TranslationException("codex.exe 를 찾지 못했다. 설정에서 경로를 지정한다.");
+            ?? throw new TranslationException("codex.exe를 찾지 못했습니다. Codex CLI가 설치되어 있는지 확인해 주세요.");
 
     public async Task<bool> IsLoggedInAsync(CancellationToken ct = default)
     {

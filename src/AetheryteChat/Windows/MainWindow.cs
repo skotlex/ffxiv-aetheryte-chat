@@ -162,6 +162,7 @@ internal sealed class MainWindow : Window
         var channel = DrawChannelSelector();
         var prefix = channel.NeedsTellTarget ? $"/t {_tellTarget.Trim()}" : channel.Prefix;
 
+        ImGuiHelpers.ScaledDummy(8); // 설정 탭처럼 묶음 사이를 띄운다
         ImGui.TextUnformatted("한국어");
         ImGui.SetNextItemWidth(-1);
         var enter = ImGui.InputText("##ko", ref _koreanInput, 500, ImGuiInputTextFlags.EnterReturnsTrue);
@@ -215,7 +216,7 @@ internal sealed class MainWindow : Window
     {
         if (_japanese.Length == 0)
         {
-            WrappedText.Draw("번역하면 여기에 일본어와, 그 일본어를 다시 한국어로 옮긴 뜻이 나온다.", DimColor);
+            WrappedText.Draw("번역하면 여기에 일본어와, 그 일본어를 다시 한국어로 옮긴 뜻이 나옵니다.", DimColor);
             return;
         }
 
@@ -229,7 +230,7 @@ internal sealed class MainWindow : Window
             switch (_backState)
             {
                 case TranslationState.Pending:
-                    ImGui.TextColored(DimColor, "… 확인 중 (기다리지 않고 보내도 된다)");
+                    ImGui.TextColored(DimColor, "… 확인 중 (기다리지 않고 보내셔도 됩니다)");
                     break;
                 case TranslationState.Done:
                     using (ImRaii.PushColor(ImGuiCol.Text, TranslationColor))
@@ -242,13 +243,13 @@ internal sealed class MainWindow : Window
         }
 
         if (stale)
-            ImGui.TextColored(ErrorColor, "한국어가 바뀌었다 — Enter 로 다시 번역한다.");
+            ImGui.TextColored(ErrorColor, "한국어가 바뀌었습니다 — Enter로 다시 번역해 주세요.");
     }
 
     private string? SendError(SendChannel channel, string prefix)
     {
         if (channel.NeedsTellTarget && string.IsNullOrWhiteSpace(_tellTarget))
-            return "귓속말 받는 사람을 적는다 (이름 성 또는 이름 성@서버).";
+            return "귓속말 받는 사람을 적어 주세요 (이름 성 또는 이름 성@서버).";
         return ChatSender.Validate(prefix, _japanese);
     }
 
@@ -270,7 +271,7 @@ internal sealed class MainWindow : Window
             {
                 _translatedFrom = korean;
                 _japanese = t.Result.Text;
-                SetStatus($"번역됨 ({t.Result.Elapsed.TotalSeconds:0.0}초, {Encoding.UTF8.GetByteCount(_japanese)}바이트).", false);
+                SetStatus($"번역했습니다 ({t.Result.Elapsed.TotalSeconds:0.0}초, {Encoding.UTF8.GetByteCount(_japanese)}바이트).", false);
                 CheckMeaning(id, _japanese);
             }
             else if (!t.IsCanceled)
@@ -358,7 +359,7 @@ internal sealed class MainWindow : Window
                 }
                 else
                 {
-                    SetStatus($"보냄 ({channelLabel}): {korean}", false);
+                    SetStatus($"보냈습니다 ({channelLabel}): {korean}", false);
                     _requestId++; // 아직 끝나지 않은 뜻 확인 결과가 다음 입력에 붙지 않게
                     _koreanInput = "";
                     _translatedFrom = "";
@@ -375,10 +376,10 @@ internal sealed class MainWindow : Window
 
     private static readonly (TranslationEngine Engine, string Label)[] Engines =
     [
-        (TranslationEngine.Claude, "Claude CLI — 빠름 (약 2초)"),
-        (TranslationEngine.Codex, "Codex CLI — 느림 (약 5~6초), 토큰 많이 씀"),
-        (TranslationEngine.Ollama, "Ollama (로컬) — 가장 빠르나 (약 1초) GPU를 사용"),
-        (TranslationEngine.Papago, "Papago (웹) — 막힐 수 있으며 게임 용어에 약함"),
+        (TranslationEngine.Claude, "Claude CLI — 빠릅니다 (약 2초)"),
+        (TranslationEngine.Codex, "Codex CLI — 느리고 (약 5~6초) 토큰을 많이 씁니다"),
+        (TranslationEngine.Ollama, "Ollama (로컬) — 가장 빠르지만 (약 1초) GPU를 사용합니다"),
+        (TranslationEngine.Papago, "Papago (웹) — 막힐 수 있으며 게임 용어에 약합니다"),
     ];
 
     private void DrawSettings()
@@ -436,7 +437,7 @@ internal sealed class MainWindow : Window
             }
         }
         if (config.WindowStyleName is not null && _windowStyles.Find(config.WindowStyleName) is null)
-            WrappedText.Draw($"'{config.WindowStyleName}' 스타일을 찾지 못해 Dalamud 설정을 따른다.", ErrorColor);
+            WrappedText.Draw($"'{config.WindowStyleName}' 스타일을 찾지 못해 Dalamud 설정을 따릅니다.", ErrorColor);
         ImGuiHelpers.ScaledDummy(8);
 
         DrawColorSettings(config);

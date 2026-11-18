@@ -32,7 +32,7 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
 
     public string Name => $"Ollama ({options.Model})";
     public string ShortName => options.Model;
-    public string NotReadyHint => $"모델 없음 — 터미널에서 'ollama pull {options.Model}' 로 받는다";
+    public string NotReadyHint => $"모델 없음 — 터미널에서 'ollama pull {options.Model}'로 받아 주세요";
 
     /// <summary>로그인 대신 Ollama 가 떠 있고 모델을 받아 두었는지 본다. 모델은 부르지 않는다.</summary>
     public async Task<bool> IsLoggedInAsync(CancellationToken ct = default)
@@ -48,7 +48,7 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
         }
         catch (Exception e) when (e is HttpRequestException or OperationCanceledException && !ct.IsCancellationRequested)
         {
-            throw new TranslationException("Ollama 가 실행 중이 아니다 — Ollama 를 켠다.", e);
+            throw new TranslationException("Ollama가 실행 중이 아닙니다 — Ollama를 켜 주세요.", e);
         }
 
         bool installed;
@@ -113,11 +113,11 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            throw new TranslationException($"Ollama 응답이 {options.Timeout.TotalSeconds:0}초 안에 오지 않았다.");
+            throw new TranslationException($"Ollama 응답이 {options.Timeout.TotalSeconds:0}초 안에 오지 않았습니다.");
         }
         catch (HttpRequestException e)
         {
-            throw new TranslationException($"Ollama 에 연결하지 못했다: {e.Message}", e);
+            throw new TranslationException($"Ollama에 연결하지 못했습니다: {e.Message}", e);
         }
         var elapsed = DateTime.UtcNow - started;
 
@@ -125,7 +125,7 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
         var root = doc.RootElement;
         var content = root.TryGetProperty("message", out var message) && message.TryGetProperty("content", out var c)
             ? c.GetString() ?? ""
-            : throw new TranslationException($"Ollama 응답에 message.content 가 없다: {Trim(responseText)}");
+            : throw new TranslationException($"Ollama 응답에 message.content가 없습니다: {Trim(responseText)}");
 
         long? input = root.TryGetProperty("prompt_eval_count", out var p) && p.TryGetInt64(out var pv) ? pv : null;
         long? output = root.TryGetProperty("eval_count", out var o) && o.TryGetInt64(out var ov) ? ov : null;

@@ -10,7 +10,7 @@ internal static class AnswerJson
         var start = answer.IndexOf('{');
         var end = answer.LastIndexOf('}');
         if (start < 0 || end <= start)
-            throw new TranslationException($"답에 JSON 객체가 없다: {answer.Trim()}");
+            throw new TranslationException($"답에 JSON 객체가 없습니다: {answer.Trim()}");
 
         try
         {
@@ -20,9 +20,9 @@ internal static class AnswerJson
         }
         catch (JsonException e)
         {
-            throw new TranslationException($"답의 JSON 을 읽지 못했다: {answer.Trim()}", e);
+            throw new TranslationException($"답의 JSON을 읽지 못했습니다: {answer.Trim()}", e);
         }
 
-        throw new TranslationException($"답에 translation 필드가 없다: {answer.Trim()}");
+        throw new TranslationException($"답에 translation 필드가 없습니다: {answer.Trim()}");
     }
 }

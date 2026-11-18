@@ -37,7 +37,7 @@ public sealed class PapagoWebTranslator : ITranslator
         CancellationToken ct = default)
     {
         if (DateTime.UtcNow < _cooldownUntil)
-            throw new TranslationException($"Papago 가 요청을 제한해 쉬는 중 ({(_cooldownUntil - DateTime.UtcNow).TotalSeconds:0}초 남음).");
+            throw new TranslationException($"Papago가 요청을 제한해 쉬는 중입니다 ({(_cooldownUntil - DateTime.UtcNow).TotalSeconds:0}초 남음).");
 
         var (source, target) = direction switch
         {
@@ -81,18 +81,18 @@ public sealed class PapagoWebTranslator : ITranslator
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            throw new TranslationException($"Papago 응답이 {Timeout.TotalSeconds:0}초 안에 오지 않았다.");
+            throw new TranslationException($"Papago 응답이 {Timeout.TotalSeconds:0}초 안에 오지 않았습니다.");
         }
         catch (HttpRequestException e)
         {
-            throw new TranslationException($"Papago 에 연결하지 못했다: {e.Message}", e);
+            throw new TranslationException($"Papago에 연결하지 못했습니다: {e.Message}", e);
         }
         sw.Stop();
 
         if (status == HttpStatusCode.TooManyRequests)
         {
             _cooldownUntil = DateTime.UtcNow + RateLimitCooldown;
-            throw new TranslationException($"Papago 가 요청을 제한했다(429). {RateLimitCooldown.TotalSeconds:0}초 쉰다.");
+            throw new TranslationException($"Papago가 요청을 제한했습니다(429). {RateLimitCooldown.TotalSeconds:0}초 쉽니다.");
         }
         if (!((int)status is >= 200 and < 300))
             throw new TranslationException($"Papago HTTP {(int)status}: {Trim(body)}");
@@ -105,10 +105,10 @@ public sealed class PapagoWebTranslator : ITranslator
         }
         catch (JsonException e)
         {
-            throw new TranslationException($"Papago 응답이 JSON 이 아니다: {Trim(body)}", e);
+            throw new TranslationException($"Papago 응답이 JSON이 아닙니다: {Trim(body)}", e);
         }
 
-        throw new TranslationException($"Papago 응답에 translatedText 가 없다: {Trim(body)}");
+        throw new TranslationException($"Papago 응답에 translatedText가 없습니다: {Trim(body)}");
     }
 
     private static string Trim(string s) => s.Length <= 300 ? s.Trim() : s[..300].Trim() + "…";

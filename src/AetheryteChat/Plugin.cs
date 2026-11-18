@@ -42,7 +42,7 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(CommandName, new CommandInfo((_, _) => _mainWindow.Toggle())
         {
-            HelpMessage = "Aetheryte Chat 창을 열고 닫는다",
+            HelpMessage = "Aetheryte Chat 창을 열고 닫습니다",
         });
 
         PluginInterface.UiBuilder.Draw += _windowSystem.Draw;

@@ -44,7 +44,7 @@ internal static class CliRunner
         }
         catch (Exception e)
         {
-            throw new TranslationException($"'{executable}' 를 실행하지 못했다: {e.Message}", e);
+            throw new TranslationException($"'{executable}'를 실행하지 못했습니다: {e.Message}", e);
         }
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -70,7 +70,7 @@ internal static class CliRunner
             KillQuietly(process);
             if (ct.IsCancellationRequested)
                 throw;
-            throw new TranslationException($"제한 시간 {timeout.TotalSeconds:0}초를 넘겨 프로세스를 종료했다.");
+            throw new TranslationException($"제한 시간 {timeout.TotalSeconds:0}초를 넘겨 프로세스를 종료했습니다.");
         }
     }
 

@@ -29,12 +29,12 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
 
     public string Name => "Claude CLI";
     public string ShortName => $"Claude {options.Model}";
-    public string NotReadyHint => "로그인 안 됨 — 터미널에서 'claude' 로 로그인";
+    public string NotReadyHint => "로그인 안 됨 — 터미널에서 'claude'로 로그인해 주세요";
 
     private string Executable =>
         _resolvedPath ??= options.ExecutablePath
             ?? ClaudeCliLocator.Find()
-            ?? throw new TranslationException("claude.exe 를 찾지 못했다. 설정에서 경로를 지정한다.");
+            ?? throw new TranslationException("claude.exe를 찾지 못했습니다. Claude Code가 설치되어 있는지 확인해 주세요.");
 
     public async Task<bool> IsLoggedInAsync(CancellationToken ct = default)
     {
@@ -94,7 +94,7 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
         }
         catch (JsonException e)
         {
-            throw new TranslationException($"claude 출력이 JSON 이 아니다: {Trim(stdout)}", e);
+            throw new TranslationException($"claude 출력이 JSON이 아닙니다: {Trim(stdout)}", e);
         }
 
         using (envelope)
