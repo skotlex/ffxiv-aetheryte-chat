@@ -2,7 +2,6 @@ using System.Numerics;
 using System.Text;
 using AetheryteChat.Translation;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface;
 using Dalamud.Interface.Style;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
@@ -424,13 +423,6 @@ internal sealed class MainWindow : Window
         }
         if (config.WindowStyleName is not null && _windowStyles.Find(config.WindowStyleName) is null)
             WrappedText.Draw($"'{config.WindowStyleName}' 스타일을 찾지 못해 Dalamud 설정을 따른다.", ErrorColor);
-        // 지금 Dalamud 에는 스타일 편집기를 여는 명령어가 없어(/xlstyle 없음) 설정의 Look & Feel 탭으로 보낸다
-        if (ImGui.Button("Dalamud 스타일 편집 열기"))
-            Plugin.PluginInterface.OpenDalamudSettingsTo(SettingsOpenKind.LookAndFeel);
-        WrappedText.Draw(
-            "이 창에만 적용된다. 버튼을 눌러 Look & Feel 탭의 'Open Style Editor' 로 스타일을 만들어 저장한 뒤 여기서 고른다.",
-            DimColor);
-
         ImGuiHelpers.ScaledDummy(8);
 
         DrawColorSettings(config);
