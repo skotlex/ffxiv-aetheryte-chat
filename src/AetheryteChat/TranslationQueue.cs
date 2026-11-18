@@ -24,6 +24,9 @@ internal sealed partial class TranslationQueue : IDisposable
     private readonly SemaphoreSlim _slots = new(MaxConcurrent);
     private readonly CancellationTokenSource _cts = new();
 
+    private const int MaxRememberedSent = 20;
+    private readonly OrderedDictionary<string, string> _sent = new(); // 보낸 일본어 → 한국어 원문
+
     public TranslationQueue(ITranslator translator)
     {
         _translator = translator;
@@ -38,11 +41,49 @@ internal sealed partial class TranslationQueue : IDisposable
     /// <summary>게임 스레드에서 불린다. 번역할 줄이면 대기열에 넣고 바로 돌아온다.</summary>
     public void Enqueue(ChatLine line)
     {
+        // 내가 보낸 글이 돌아온 것이면 CLI 를 부르지 않고 보낼 때의 한국어 원문을 쓴다
+        if (TakeSent(line.Message) is { } korean)
+        {
+            line.Complete(TranslationState.Done, korean);
+            return;
+        }
+
         if (!AutoTranslate || Status != EngineStatus.Ready || !ContainsJapanese(line.Message))
             return;
 
         line.MarkPending();
         _ = TranslateAsync(line, _cts.Token);
+    }
+
+    /// <summary>
+    /// 보낼 한국어를 일본어로 번역한다. 사용자가 기다리는 중이라 받은 채팅의 동시 실행 제한을 거치지 않는다.
+    /// </summary>
+    public Task<TranslationResult> TranslateOutgoingAsync(string korean) =>
+        _translator.TranslateAsync(korean, TranslationDirection.KoToJa, _cts.Token);
+
+    /// <summary>보낸 일본어와 그 한국어 원문을 기억한다. 받은 채팅에 같은 글이 오면 한 번 쓰고 지운다.</summary>
+    public void RememberSent(string japanese, string korean)
+    {
+        if (korean.Length == 0)
+            return; // 미리보기를 직접 고치거나 써 넣은 경우 — 원문과 다르니 평소처럼 번역한다
+
+        lock (_sent)
+        {
+            _sent.Remove(japanese);
+            _sent.Add(japanese, korean);
+            while (_sent.Count > MaxRememberedSent)
+                _sent.RemoveAt(0);
+        }
+    }
+
+    private string? TakeSent(string message)
+    {
+        lock (_sent)
+        {
+            if (!_sent.Remove(message, out var korean))
+                return null;
+            return korean;
+        }
     }
 
     public void Dispose()
