@@ -1,45 +1,26 @@
 using System.Numerics;
-using System.Text;
-using AetheryteChat.Translation;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.ImGuiFontChooserDialog;
-using Dalamud.Interface.Style;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using static AetheryteChat.Windows.UiCommon;
 
 namespace AetheryteChat.Windows;
 
-/// <summary>받은 채팅(원문 + 한국어 번역), 보내기(한국어 → 일본어 + 뜻 확인 → 전송), 설정 창.</summary>
-internal sealed class MainWindow : Window
+/// <summary>
+/// 받은 채팅(원문 + 한국어 번역)과 설정 창. 보내기 위치가 '채팅 아래' 면 받은 채팅 아래에 보내기를 붙인다.
+/// </summary>
+internal sealed class MainWindow : StyledWindow
 {
-    private static readonly Vector4 TranslationColor = new(0.55f, 0.85f, 1f, 1f);
-    private static readonly Vector4 DimColor = new(0.6f, 0.6f, 0.6f, 1f);
-    private static readonly Vector4 ErrorColor = new(1f, 0.5f, 0.4f, 1f);
-
-    private readonly Plugin _plugin;
     private readonly ChannelColors _channelColors = new(Plugin.GameConfig);
-    private readonly WindowStyles _windowStyles = new();
-    private StyleModel? _pushedStyle; // PreDraw 에서 push 한 스타일 — PostDraw 에서 같은 것을 pop 한다
-    private int _pushedColorCount;    // PreDraw 에서 push 한 색 개수 (배경 + 컨트롤 색)
 
-    // 보내기 탭 상태. 번역·전송 결과는 백그라운드에서 채워진다 (문자열 대입이라 UI 스레드에서 읽어도 안전)
-    private string _koreanInput = "";
-    private string _translatedFrom = ""; // 지금 일본어를 만든 한국어 — 입력이 이와 다르면 다시 번역해야 한다
-    private string _japanese = "";
-    private string _back = "";           // 일본어를 다시 한국어로 옮긴 것 (뜻 확인용)
-    private TranslationState _backState = TranslationState.None;
-    private int _requestId;              // 새 번역을 시작하면 늘린다 — 늦게 끝난 이전 결과를 버리는 데 쓴다
-    private string _channelKey = SendChannel.AutoKey; // 기본: 게임 입력창의 현재 채널
-    private string _tellTarget = "";
-    private volatile bool _busy;         // 번역 또는 전송 중. 뜻 확인은 보내기를 막지 않는다
-    private string _sendStatus = "";
-    private bool _sendStatusIsError;
+    // 지난 프레임에 잰 보내기 묶음의 높이 — 받은 채팅 로그가 그만큼 비켜 준다 (보내기 높이는 번역 확인 줄에 따라 바뀐다)
+    private float _sendPanelHeight;
 
-    public MainWindow(Plugin plugin) : base("Aetheryte Chat##main")
+    public MainWindow(Plugin plugin) : base(plugin, "Aetheryte Chat##main")
     {
-        _plugin = plugin;
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(420, 360),
@@ -47,79 +28,63 @@ internal sealed class MainWindow : Window
         };
     }
 
-    public override void PreDraw()
+    protected override void DrawContent()
     {
-        // 배경만 투명하게 한다 (Dalamud 제목줄 메뉴의 불투명도는 글자까지 흐려진다)
-        BgAlpha = _plugin.Configuration.BackgroundOpacity;
-
-        // 이 창에만 다른 스타일을 쓴다. Dalamud 는 PreDraw 뒤에 현재 스타일에서 제목줄 색을 읽어 push 하고,
-        // 창을 닫은(End) 뒤 PostDraw 를 부르므로 여기서 push 하고 PostDraw 에서 pop 하면 이 창만 감싼다 (WindowHost.cs)
-        _pushedStyle = _windowStyles.Find(_plugin.Configuration.WindowStyleName);
-        _pushedStyle?.Push();
-
-        // 배경색·컨트롤 색은 고른 스타일 위에 덮는다. 알파는 스타일 값을 두고, 배경은 BgAlpha(배경 불투명도)가 다시 정한다
-        _pushedColorCount = 0;
-        if (_plugin.Configuration.BackgroundColor is { } rgb)
-        {
-            var alpha = ImGui.GetStyle().Colors[(int)ImGuiCol.WindowBg].W;
-            ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(rgb, alpha));
-            _pushedColorCount++;
-        }
-        _pushedColorCount += CustomColors.Push(_plugin.Configuration.ControlColors, _plugin.Configuration.ControlOpacity);
-    }
-
-    public override void PostDraw()
-    {
-        if (_pushedColorCount > 0)
-        {
-            ImGui.PopStyleColor(_pushedColorCount);
-            _pushedColorCount = 0;
-        }
-        _pushedStyle?.Pop();
-        _pushedStyle = null;
-    }
-
-    public override void Draw()
-    {
-        using var font = _plugin.WindowFont.Handle.Push();
         using var tabs = ImRaii.TabBar("##tabs");
         if (!tabs.Success)
             return;
 
-        using (var tab = ImRaii.TabItem("받은 채팅"))
+        var sendBelow = Owner.Configuration.SendPanelPlacement == SendPanelPlacement.BelowChat;
+        // 보이는 이름은 바뀌어도 탭 ID(### 뒤)는 같게 해 보내기 위치를 바꿔도 탭 선택이 풀리지 않게 한다
+        using (var tab = ImRaii.TabItem(sendBelow ? "채팅###chat" : "받은 채팅###chat"))
         {
             if (tab.Success)
-                DrawReceived();
+                DrawChat(sendBelow);
         }
-        using (var tab = ImRaii.TabItem("보내기"))
-        {
-            if (tab.Success)
-                DrawSend();
-        }
-        using (var tab = ImRaii.TabItem("설정"))
+        using (var tab = ImRaii.TabItem("설정###settings"))
         {
             if (tab.Success)
                 DrawSettings();
         }
     }
 
-    private void DrawReceived()
+    private void DrawChat(bool sendBelow)
     {
-        var queue = _plugin.TranslationQueue;
+        var queue = Owner.TranslationQueue;
 
         if (ImGui.Button("지우기"))
-            _plugin.ChatListener.Clear();
+            Owner.ChatListener.Clear();
         Layout.SameLineIfFits(Layout.CheckboxWidth("자동 번역"));
         var auto = queue.AutoTranslate;
         if (ImGui.Checkbox("자동 번역", ref auto))
             queue.AutoTranslate = auto;
+        // 보내기를 별도 창으로 두었는데 그 창을 닫았으면 다시 여는 버튼
+        if (!sendBelow && !Owner.SendWindow.IsOpen)
+        {
+            Layout.SameLineIfFits(Layout.ButtonWidth("보내기 창 열기"));
+            if (ImGui.Button("보내기 창 열기"))
+                Owner.SendWindow.IsOpen = true;
+        }
         DrawEngineStatus(queue, rightAlign: true);
 
-        using var child = ImRaii.Child("##log", Vector2.Zero, true);
-        if (!child.Success)
-            return;
+        // 보내기를 아래에 붙이면 로그는 그 높이만큼 남기고 나머지를 채운다 (음수 높이 = 남은 높이에서 뺀 만큼)
+        using (var child = ImRaii.Child("##log", new Vector2(0, sendBelow ? -_sendPanelHeight : 0), true))
+        {
+            if (child.Success)
+                DrawLog();
+        }
 
-        foreach (var line in _plugin.ChatListener.Snapshot())
+        if (sendBelow)
+        {
+            var top = ImGui.GetCursorPosY();
+            Owner.SendPanel.Draw(compact: true);
+            _sendPanelHeight = ImGui.GetCursorPosY() - top;
+        }
+    }
+
+    private void DrawLog()
+    {
+        foreach (var line in Owner.ChatListener.Snapshot())
         {
             // 원문은 게임 채팅창과 같은 채널 색(채널은 색으로 구분), 번역은 구분되게 따로 정한 색으로 그린다
             var original = $"[{line.Time:HH:mm}] {line.Sender}: {line.Message}";
@@ -127,6 +92,7 @@ internal sealed class MainWindow : Window
                 WrappedText.Draw(original, channelColor);
             else
                 WrappedText.Draw(original);
+
             // 번역 도구를 바꾸면 번역이 더해진다 — 어느 모델의 번역인지 [모델] 로 구분한다
             using var indent = ImRaii.PushIndent();
             foreach (var t in line.Translations)
@@ -151,224 +117,30 @@ internal sealed class MainWindow : Window
             ImGui.SetScrollHereY(1.0f);
     }
 
-    /// <summary>
-    /// 한국어 입력 → Enter(번역) → 일본어와 '다시 한국어로' 확인 → Enter 한 번 더(보내기).
-    /// 사용자가 일본어를 읽지 못하므로 일본어는 고칠 수 없게 보여 주고, 뜻은 다시 옮긴 한국어로 확인한다.
-    /// </summary>
-    private void DrawSend()
+    private static readonly (SendPanelPlacement Placement, string Label)[] Placements =
+    [
+        (SendPanelPlacement.BelowChat, "채팅 아래"),
+        (SendPanelPlacement.SeparateWindow, "별도 창"),
+    ];
+
+    /// <summary>보내기를 받은 채팅 아래에 붙일지, 별도 창으로 뗄지</summary>
+    private void DrawSendPlacement(Configuration config)
     {
-        var queue = _plugin.TranslationQueue;
-
-        var channel = DrawChannelSelector();
-        var prefix = channel.NeedsTellTarget ? $"/t {_tellTarget.Trim()}" : channel.Prefix;
-
-        ImGuiHelpers.ScaledDummy(8); // 설정 탭처럼 묶음 사이를 띄운다
-        ImGui.TextUnformatted("한국어");
-        ImGui.SetNextItemWidth(-1);
-        var enter = ImGui.InputText("##ko", ref _koreanInput, 500, ImGuiInputTextFlags.EnterReturnsTrue);
-        if (enter)
-            ImGui.SetKeyboardFocusHere(-1); // Enter 를 눌러도 입력칸에 머물러 한 번 더 누르면 보내지게 한다
-
-        var korean = _koreanInput.Trim();
-        var hasTranslation = _japanese.Length > 0;
-        var stale = hasTranslation && korean != _translatedFrom;
-        var sendError = !hasTranslation || stale ? null : SendError(channel, prefix);
-
-        var canTranslate = !_busy && queue.Status == EngineStatus.Ready && korean.Length > 0 && (!hasTranslation || stale);
-        var canSend = !_busy && hasTranslation && !stale && sendError is null;
-
-        using (ImRaii.Disabled(!canTranslate))
-        {
-            if (ImGui.Button("번역") && canTranslate)
-                Translate(korean);
-        }
-        Layout.SameLineIfFits(Layout.ButtonWidth("보내기"));
-        using (ImRaii.Disabled(!canSend))
-        {
-            if (ImGui.Button("보내기") && canSend)
-                Send(channel.Label, prefix);
-        }
-        var enterHint = canSend ? "Enter: 보내기" : "Enter: 번역";
-        Layout.SameLineIfFits(Layout.TextWidth(enterHint));
-        ImGui.TextColored(DimColor, enterHint);
-
-        if (enter)
-        {
-            if (canSend)
-                Send(channel.Label, prefix);
-            else if (canTranslate)
-                Translate(korean);
-        }
-
-        ImGuiHelpers.ScaledDummy(4);
-        DrawTranslationCheck(stale);
-
-        if (sendError is not null)
-            ImGui.TextColored(ErrorColor, sendError);
-        if (_sendStatus.Length > 0)
-        {
-            using (ImRaii.PushColor(ImGuiCol.Text, _sendStatusIsError ? ErrorColor : DimColor))
-                WrappedText.Draw(_sendStatus);
-        }
-    }
-
-    private void DrawTranslationCheck(bool stale)
-    {
-        if (_japanese.Length == 0)
-        {
-            WrappedText.Draw("번역하면 여기에 일본어와, 그 일본어를 다시 한국어로 옮긴 뜻이 나옵니다.", DimColor);
+        ImGui.TextUnformatted("보내기 위치");
+        var current = Placements.FirstOrDefault(p => p.Placement == config.SendPanelPlacement);
+        ImGui.SetNextItemWidth(Layout.FitWidth(320 * ImGuiHelpers.GlobalScale));
+        using var combo = ImRaii.Combo("##sendPlacement", current.Label ?? config.SendPanelPlacement.ToString());
+        if (!combo.Success)
             return;
-        }
-
-        ImGui.TextColored(DimColor, "보낼 일본어");
-        using (ImRaii.PushIndent())
-            WrappedText.Draw(_japanese);
-
-        ImGui.TextColored(DimColor, "다시 한국어로 (뜻 확인)");
-        using (ImRaii.PushIndent())
+        foreach (var (placement, label) in Placements)
         {
-            switch (_backState)
+            if (ImGui.Selectable(label, placement == config.SendPanelPlacement) && placement != config.SendPanelPlacement)
             {
-                case TranslationState.Pending:
-                    ImGui.TextColored(DimColor, "… 확인 중 (기다리지 않고 보내셔도 됩니다)");
-                    break;
-                case TranslationState.Done:
-                    using (ImRaii.PushColor(ImGuiCol.Text, TranslationColor))
-                        WrappedText.Draw(_back);
-                    break;
-                case TranslationState.Failed:
-                    WrappedText.Draw($"확인 실패: {_back}", ErrorColor);
-                    break;
+                config.SendPanelPlacement = placement;
+                config.Save();
+                Owner.SendWindow.IsOpen = placement == SendPanelPlacement.SeparateWindow;
             }
         }
-
-        if (stale)
-            ImGui.TextColored(ErrorColor, "한국어가 바뀌었습니다 — Enter로 다시 번역해 주세요.");
-    }
-
-    private string? SendError(SendChannel channel, string prefix)
-    {
-        if (channel.NeedsTellTarget && string.IsNullOrWhiteSpace(_tellTarget))
-            return "귓속말 받는 사람을 적어 주세요 (이름 성 또는 이름 성@서버).";
-        return ChatSender.Validate(prefix, _japanese);
-    }
-
-    private void Translate(string korean)
-    {
-        var id = ++_requestId;
-        _busy = true;
-        _japanese = "";
-        _back = "";
-        _backState = TranslationState.None;
-        SetStatus("번역 중…", false);
-
-        _plugin.TranslationQueue.TranslateOutgoingAsync(korean).ContinueWith(t =>
-        {
-            if (id != _requestId)
-                return;
-
-            if (t.IsCompletedSuccessfully)
-            {
-                _translatedFrom = korean;
-                _japanese = t.Result.Text;
-                SetStatus($"번역했습니다 ({t.Result.Elapsed.TotalSeconds:0.0}초, {Encoding.UTF8.GetByteCount(_japanese)}바이트).", false);
-                CheckMeaning(id, _japanese);
-            }
-            else if (!t.IsCanceled)
-            {
-                SetStatus($"번역 실패: {t.Exception?.InnerException?.Message}", true);
-            }
-            _busy = false;
-        });
-    }
-
-    private void CheckMeaning(int id, string japanese)
-    {
-        _backState = TranslationState.Pending;
-        _plugin.TranslationQueue.TranslateBackAsync(japanese).ContinueWith(t =>
-        {
-            if (id != _requestId)
-                return;
-
-            if (t.IsCompletedSuccessfully)
-            {
-                _back = t.Result.Text;
-                _backState = TranslationState.Done;
-            }
-            else if (!t.IsCanceled)
-            {
-                _back = t.Exception?.InnerException?.Message ?? "";
-                _backState = TranslationState.Failed;
-            }
-        });
-    }
-
-    /// <summary>채널 목록을 그리고 고른 채널을 돌려준다. 귓속말이면 받는 사람 칸도 그린다.</summary>
-    private SendChannel DrawChannelSelector()
-    {
-        // 링크셸 가입·탈퇴, 게임 입력창의 채널 변경을 바로 반영하려고 매번 게임에서 읽는다
-        var channels = SendChannels.Build();
-        var selected = channels.FirstOrDefault(c => c.Key == _channelKey) ?? channels[0];
-
-        // '한국어' 처럼 이름을 위 줄에 두고 그 아래에 목록 상자를 놓는다
-        ImGui.TextUnformatted("채널");
-        ImGui.SetNextItemWidth(Layout.FitWidth(260 * ImGuiHelpers.GlobalScale));
-        using (var combo = ImRaii.Combo("##channel", selected.Label))
-        {
-            if (combo.Success)
-            {
-                foreach (var c in channels)
-                {
-                    if (ImGui.Selectable(c.Label, c.Key == selected.Key) && c.Key != selected.Key)
-                    {
-                        selected = c;
-                        _channelKey = c.Key;
-                        // 귓속말로 바꾸면 마지막으로 귓속말을 보낸 사람을 미리 채운다
-                        if (c.NeedsTellTarget && _tellTarget.Length == 0)
-                            _tellTarget = _plugin.ChatListener.LastTellSender ?? "";
-                    }
-                }
-            }
-        }
-        DrawEngineStatus(_plugin.TranslationQueue);
-
-        if (selected.NeedsTellTarget)
-        {
-            ImGui.TextUnformatted("받는 사람");
-            ImGui.SetNextItemWidth(Layout.FitWidth(260 * ImGuiHelpers.GlobalScale));
-            ImGui.InputTextWithHint("##tellTarget", "이름 성@서버", ref _tellTarget, 64);
-        }
-        return selected;
-    }
-
-    private void Send(string channelLabel, string prefix)
-    {
-        var japanese = _japanese.Trim();
-        var korean = _translatedFrom;
-        _busy = true;
-        SetStatus("보내는 중…", false);
-        // 받은 채팅에 돌아오는 내 글은 다시 번역하지 않고 한국어 원문을 보여 준다
-        _plugin.TranslationQueue.RememberSent(japanese, korean);
-        Plugin.Framework.RunOnFrameworkThread(() => ChatSender.Send(prefix, japanese))
-            .ContinueWith(t =>
-            {
-                if (t.Exception?.InnerException is { } e)
-                {
-                    SetStatus($"보내기 실패: {e.Message}", true);
-                    Plugin.Log.Warning(e, "채팅 보내기 실패");
-                }
-                else
-                {
-                    SetStatus($"보냈습니다 ({channelLabel}): {korean}", false);
-                    _requestId++; // 아직 끝나지 않은 뜻 확인 결과가 다음 입력에 붙지 않게
-                    _koreanInput = "";
-                    _translatedFrom = "";
-                    _japanese = "";
-                    _back = "";
-                    _backState = TranslationState.None;
-                }
-                _busy = false;
-            });
     }
 
     /// <summary>번역 도구를 바꿀 때 새 도구로 다시 번역할 최근 대화 수</summary>
@@ -384,7 +156,7 @@ internal sealed class MainWindow : Window
 
     private void DrawSettings()
     {
-        var config = _plugin.Configuration;
+        var config = Owner.Configuration;
 
         ImGui.TextUnformatted("번역 도구");
         var current = Engines.FirstOrDefault(e => e.Engine == config.Engine);
@@ -399,14 +171,18 @@ internal sealed class MainWindow : Window
                     {
                         config.Engine = engine;
                         config.Save();
-                        _plugin.TranslationQueue.SetTranslator(_plugin.CreateTranslator());
+                        Owner.TranslationQueue.SetTranslator(Owner.CreateTranslator());
                         // 새 도구로 최근 대화를 다시 번역한다. 이전 번역은 남겨 두고 모델 이름으로 구분한다
-                        _ = _plugin.TranslationQueue.RetranslateRecentAsync(_plugin.ChatListener.Snapshot(), RetranslateCount);
+                        _ = Owner.TranslationQueue.RetranslateRecentAsync(Owner.ChatListener.Snapshot(), RetranslateCount);
                     }
                 }
             }
         }
-        DrawEngineStatus(_plugin.TranslationQueue);
+        DrawEngineStatus(Owner.TranslationQueue);
+
+        ImGuiHelpers.ScaledDummy(8);
+
+        DrawSendPlacement(config);
 
         ImGuiHelpers.ScaledDummy(8);
 
@@ -426,7 +202,7 @@ internal sealed class MainWindow : Window
                     config.WindowStyleName = null;
                     config.Save();
                 }
-                foreach (var style in _windowStyles.All)
+                foreach (var style in Owner.WindowStyles.All)
                 {
                     if (ImGui.Selectable(style.Name, style.Name == config.WindowStyleName) && style.Name != config.WindowStyleName)
                     {
@@ -436,7 +212,7 @@ internal sealed class MainWindow : Window
                 }
             }
         }
-        if (config.WindowStyleName is not null && _windowStyles.Find(config.WindowStyleName) is null)
+        if (config.WindowStyleName is not null && Owner.WindowStyles.Find(config.WindowStyleName) is null)
             WrappedText.Draw($"'{config.WindowStyleName}' 스타일을 찾지 못해 Dalamud 설정을 따릅니다.", ErrorColor);
         ImGuiHelpers.ScaledDummy(8);
 
@@ -545,7 +321,7 @@ internal sealed class MainWindow : Window
             {
                 config.WindowFont = null;
                 config.Save();
-                _plugin.WindowFont.Change(null);
+                Owner.WindowFont.Change(null);
             }
         }
     }
@@ -572,7 +348,7 @@ internal sealed class MainWindow : Window
                 return; // 취소
             config.WindowFont = t.Result;
             config.Save();
-            _plugin.WindowFont.Change(t.Result);
+            Owner.WindowFont.Change(t.Result);
         });
     }
 
@@ -610,35 +386,4 @@ internal sealed class MainWindow : Window
         ImGui.TextUnformatted(label);
     }
 
-    private void SetStatus(string text, bool isError)
-    {
-        _sendStatusIsError = isError;
-        _sendStatus = text;
-    }
-
-    /// <summary>
-    /// 엔진 상태를 바로 앞 컨트롤 옆에 그린다. 자리가 모자라면 다음 줄에 줄바꿈해서 그린다.
-    /// rightAlign 이면 그 줄의 오른쪽 끝에 붙인다
-    /// </summary>
-    private static void DrawEngineStatus(TranslationQueue queue, bool rightAlign = false)
-    {
-        var (text, color) = queue.Status switch
-        {
-            EngineStatus.Checking => ("로그인 확인 중…", DimColor),
-            EngineStatus.Ready => ($"{queue.EngineName} 준비됨", DimColor),
-            EngineStatus.NotLoggedIn => ($"{queue.EngineName} {queue.NotReadyHint}", ErrorColor),
-            _ => ($"{queue.EngineName} 사용 불가: {queue.StatusDetail}", ErrorColor),
-        };
-        var width = Layout.TextWidth(text);
-        var placed = rightAlign ? Layout.RightAlign(width) : Layout.SameLineIfFits(width);
-        if (placed)
-        {
-            ImGui.AlignTextToFramePadding();
-            ImGui.TextColored(color, text);
-        }
-        else
-        {
-            WrappedText.Draw(text, color);
-        }
-    }
 }

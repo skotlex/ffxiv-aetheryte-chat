@@ -26,8 +26,17 @@ public sealed class Plugin : IDalamudPlugin
     internal ChatListener ChatListener { get; }
     internal TranslationQueue TranslationQueue { get; }
 
-    /// <summary>이 창의 폰트 (설정에서 고른 폰트 + 한글·일본어·게임 기호 보충)</summary>
+    /// <summary>이 플러그인 창들의 폰트 (설정에서 고른 폰트 + 한글·일본어·게임 기호 보충)</summary>
     internal WindowFont WindowFont { get; }
+
+    /// <summary>창 스타일 목록 (받은 채팅 창·보내기 창이 같이 쓴다)</summary>
+    internal WindowStyles WindowStyles { get; } = new();
+
+    /// <summary>보내기 화면과 그 상태. 채팅 아래와 별도 창이 같은 것을 그려, 위치를 바꿔도 입력하던 글이 남는다</summary>
+    internal SendPanel SendPanel { get; }
+
+    /// <summary>보내기 위치가 '별도 창' 일 때의 보내기 창</summary>
+    internal SendWindow SendWindow { get; }
 
     public Plugin()
     {
@@ -37,16 +46,27 @@ public sealed class Plugin : IDalamudPlugin
 
         TranslationQueue = new TranslationQueue(CreateTranslator());
         ChatListener = new ChatListener(ChatGui, TranslationQueue.Enqueue);
+        SendPanel = new SendPanel(this);
         _mainWindow = new MainWindow(this);
+        SendWindow = new SendWindow(this);
         _windowSystem.AddWindow(_mainWindow);
+        _windowSystem.AddWindow(SendWindow);
 
-        CommandManager.AddHandler(CommandName, new CommandInfo((_, _) => _mainWindow.Toggle())
+        CommandManager.AddHandler(CommandName, new CommandInfo((_, _) => ToggleWindows())
         {
             HelpMessage = "Aetheryte Chat 창을 열고 닫습니다",
         });
 
         PluginInterface.UiBuilder.Draw += _windowSystem.Draw;
-        PluginInterface.UiBuilder.OpenMainUi += _mainWindow.Toggle;
+        PluginInterface.UiBuilder.OpenMainUi += ToggleWindows;
+    }
+
+    /// <summary>받은 채팅 창을 열고 닫는다. 보내기가 별도 창이면 그 창도 같이 열고 닫는다</summary>
+    private void ToggleWindows()
+    {
+        _mainWindow.Toggle();
+        if (Configuration.SendPanelPlacement == SendPanelPlacement.SeparateWindow)
+            SendWindow.IsOpen = _mainWindow.IsOpen;
     }
 
     /// <summary>설정의 번역 도구로 엔진을 만든다</summary>
@@ -62,7 +82,7 @@ public sealed class Plugin : IDalamudPlugin
     public void Dispose()
     {
         PluginInterface.UiBuilder.Draw -= _windowSystem.Draw;
-        PluginInterface.UiBuilder.OpenMainUi -= _mainWindow.Toggle;
+        PluginInterface.UiBuilder.OpenMainUi -= ToggleWindows;
         CommandManager.RemoveHandler(CommandName);
 
         _windowSystem.RemoveAllWindows();

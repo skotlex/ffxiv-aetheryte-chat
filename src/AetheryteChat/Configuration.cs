@@ -2,6 +2,16 @@ using Dalamud.Configuration;
 
 namespace AetheryteChat;
 
+/// <summary>보내기 화면을 어디에 둘지</summary>
+public enum SendPanelPlacement
+{
+    /// <summary>받은 채팅 아래 (한 화면에서 받기·보내기)</summary>
+    BelowChat,
+
+    /// <summary>별도 창 (따로 옮기고 크기를 정할 수 있다)</summary>
+    SeparateWindow,
+}
+
 public enum TranslationEngine
 {
     Claude,
@@ -50,6 +60,9 @@ public sealed class Configuration : IPluginConfiguration
 
     /// <summary>번역 도구. Claude CLI 가 주력이고 Codex CLI 는 느리지만 대안 (DESIGN 4절)</summary>
     public TranslationEngine Engine { get; set; } = TranslationEngine.Claude;
+
+    /// <summary>보내기 위치. 기본은 받은 채팅 아래</summary>
+    public SendPanelPlacement SendPanelPlacement { get; set; } = SendPanelPlacement.BelowChat;
 
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 }
