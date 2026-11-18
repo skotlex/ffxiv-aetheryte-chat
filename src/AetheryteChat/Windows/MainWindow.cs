@@ -113,7 +113,7 @@ internal sealed class MainWindow : Window
         var auto = queue.AutoTranslate;
         if (ImGui.Checkbox("자동 번역", ref auto))
             queue.AutoTranslate = auto;
-        DrawEngineStatus(queue);
+        DrawEngineStatus(queue, rightAlign: true);
 
         using var child = ImRaii.Child("##log", Vector2.Zero, true);
         if (!child.Success)
@@ -309,8 +309,10 @@ internal sealed class MainWindow : Window
         var channels = SendChannels.Build();
         var selected = channels.FirstOrDefault(c => c.Key == _channelKey) ?? channels[0];
 
-        ImGui.SetNextItemWidth(Layout.FitWidth(260 * ImGuiHelpers.GlobalScale, "채널"));
-        using (var combo = ImRaii.Combo("채널", selected.Label))
+        // '한국어' 처럼 이름을 위 줄에 두고 그 아래에 목록 상자를 놓는다
+        ImGui.TextUnformatted("채널");
+        ImGui.SetNextItemWidth(Layout.FitWidth(260 * ImGuiHelpers.GlobalScale));
+        using (var combo = ImRaii.Combo("##channel", selected.Label))
         {
             if (combo.Success)
             {
@@ -331,8 +333,9 @@ internal sealed class MainWindow : Window
 
         if (selected.NeedsTellTarget)
         {
-            ImGui.SetNextItemWidth(Layout.FitWidth(260 * ImGuiHelpers.GlobalScale, "받는 사람"));
-            ImGui.InputTextWithHint("받는 사람", "이름 성@서버", ref _tellTarget, 64);
+            ImGui.TextUnformatted("받는 사람");
+            ImGui.SetNextItemWidth(Layout.FitWidth(260 * ImGuiHelpers.GlobalScale));
+            ImGui.InputTextWithHint("##tellTarget", "이름 성@서버", ref _tellTarget, 64);
         }
         return selected;
     }
@@ -613,9 +616,10 @@ internal sealed class MainWindow : Window
     }
 
     /// <summary>
-    /// 엔진 상태를 바로 앞 컨트롤 옆에 그린다. 자리가 모자라면 다음 줄에 줄바꿈해서 그린다
+    /// 엔진 상태를 바로 앞 컨트롤 옆에 그린다. 자리가 모자라면 다음 줄에 줄바꿈해서 그린다.
+    /// rightAlign 이면 그 줄의 오른쪽 끝에 붙인다
     /// </summary>
-    private static void DrawEngineStatus(TranslationQueue queue)
+    private static void DrawEngineStatus(TranslationQueue queue, bool rightAlign = false)
     {
         var (text, color) = queue.Status switch
         {
@@ -624,7 +628,9 @@ internal sealed class MainWindow : Window
             EngineStatus.NotLoggedIn => ($"{queue.EngineName} {queue.NotReadyHint}", ErrorColor),
             _ => ($"{queue.EngineName} 사용 불가: {queue.StatusDetail}", ErrorColor),
         };
-        if (Layout.SameLineIfFits(Layout.TextWidth(text)))
+        var width = Layout.TextWidth(text);
+        var placed = rightAlign ? Layout.RightAlign(width) : Layout.SameLineIfFits(width);
+        if (placed)
         {
             ImGui.AlignTextToFramePadding();
             ImGui.TextColored(color, text);

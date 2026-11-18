@@ -21,13 +21,29 @@ internal static class Layout
         return true;
     }
 
+    /// <summary>
+    /// width 폭의 항목을 오른쪽 끝에 붙인다. 바로 앞 항목과 같은 줄에 들어가면 그 줄 오른쪽에, 아니면 다음 줄 오른쪽에.
+    /// 창보다 넓어 한 줄에 못 놓으면 false — 부르는 쪽이 줄바꿈해서 그린다
+    /// </summary>
+    public static bool RightAlign(float width)
+    {
+        var contentMaxX = ImGui.GetWindowContentRegionMax().X; // 창 기준 좌표
+        var right = ImGui.GetWindowPos().X + contentMaxX;
+        var spacing = ImGui.GetStyle().ItemSpacing.X;
+        if (ImGui.GetItemRectMax().X + spacing + width <= right)
+        {
+            ImGui.SameLine(contentMaxX - width);
+            return true;
+        }
+
+        if (width > ImGui.GetContentRegionAvail().X)
+            return false;
+        ImGui.SetCursorPosX(contentMaxX - width);
+        return true;
+    }
+
     /// <summary>원하는 폭과 이 줄에 남은 폭 중 작은 쪽 (목록 상자·슬라이더 폭)</summary>
     public static float FitWidth(float preferred) => Math.Min(preferred, ImGui.GetContentRegionAvail().X);
-
-    /// <summary>오른쪽에 이름표가 붙는 컨트롤의 폭 — 이름표 자리를 빼고 남은 폭에 맞춘다</summary>
-    public static float FitWidth(float preferred, string rightLabel) =>
-        Math.Max(1f, Math.Min(preferred, ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ItemInnerSpacing.X - TextWidth(VisibleLabel(rightLabel))));
-
     /// <summary>버튼 폭. '##' 뒤의 ID 부분은 보이지 않으므로 빼고 잰다</summary>
     public static float ButtonWidth(string label) =>
         ImGui.CalcTextSize(VisibleLabel(label)).X + ImGui.GetStyle().FramePadding.X * 2;
