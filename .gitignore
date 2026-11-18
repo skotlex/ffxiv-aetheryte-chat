@@ -480,3 +480,6 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# 설계 문서는 로컬에만 둔다 (저장소에 올리지 않음)
+docs/
