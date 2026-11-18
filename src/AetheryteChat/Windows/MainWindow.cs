@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Text;
+using AetheryteChat.Translation;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
@@ -7,7 +8,7 @@ using Dalamud.Interface.Windowing;
 
 namespace AetheryteChat.Windows;
 
-/// <summary>받은 채팅(원문 + 한국어 번역)과 보내기(한국어 → 일본어 미리보기 → 전송) 창.</summary>
+/// <summary>받은 채팅(원문 + 한국어 번역), 보내기(한국어 → 일본어 + 뜻 확인 → 전송), 설정 창.</summary>
 internal sealed class MainWindow : Window
 {
     private static readonly Vector4 TranslationColor = new(0.55f, 0.85f, 1f, 1f);
@@ -18,13 +19,14 @@ internal sealed class MainWindow : Window
 
     // 보내기 탭 상태. 번역·전송 결과는 백그라운드에서 채워진다 (문자열 대입이라 UI 스레드에서 읽어도 안전)
     private string _koreanInput = "";
-    private string _japanesePreview = "";
-    // 마지막 번역의 한국어 원문과 결과 — 미리보기를 고치지 않고 보냈을 때만 받은 채팅에 원문을 보여 준다
-    private string _translatedFrom = "";
-    private string _translatedTo = "";
+    private string _translatedFrom = ""; // 지금 일본어를 만든 한국어 — 입력이 이와 다르면 다시 번역해야 한다
+    private string _japanese = "";
+    private string _back = "";           // 일본어를 다시 한국어로 옮긴 것 (뜻 확인용)
+    private TranslationState _backState = TranslationState.None;
+    private int _requestId;              // 새 번역을 시작하면 늘린다 — 늦게 끝난 이전 결과를 버리는 데 쓴다
     private string _channelKey = SendChannel.AutoKey; // 기본: 게임 입력창의 현재 채널
     private string _tellTarget = "";
-    private volatile bool _busy;
+    private volatile bool _busy;         // 번역 또는 전송 중. 뜻 확인은 보내기를 막지 않는다
     private string _sendStatus = "";
     private bool _sendStatusIsError;
 
@@ -36,6 +38,12 @@ internal sealed class MainWindow : Window
             MinimumSize = new Vector2(420, 360),
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
         };
+    }
+
+    public override void PreDraw()
+    {
+        // 배경만 투명하게 한다 (Dalamud 제목줄 메뉴의 불투명도는 글자까지 흐려진다)
+        BgAlpha = _plugin.Configuration.BackgroundOpacity;
     }
 
     public override void Draw()
@@ -54,6 +62,11 @@ internal sealed class MainWindow : Window
         {
             if (tab.Success)
                 DrawSend();
+        }
+        using (var tab = ImRaii.TabItem("설정"))
+        {
+            if (tab.Success)
+                DrawSettings();
         }
     }
 
@@ -76,7 +89,7 @@ internal sealed class MainWindow : Window
 
         foreach (var line in _plugin.ChatListener.Snapshot())
         {
-            ImGui.TextWrapped($"{line.Time:HH:mm} [{line.Channel}] {line.Sender}: {line.Message}");
+            WrappedText.Draw($"{line.Time:HH:mm} [{line.Channel}] {line.Sender}: {line.Message}");
             using var indent = ImRaii.PushIndent();
             switch (line.State)
             {
@@ -85,11 +98,11 @@ internal sealed class MainWindow : Window
                     break;
                 case TranslationState.Done:
                     using (ImRaii.PushColor(ImGuiCol.Text, TranslationColor))
-                        ImGui.TextWrapped($"→ {line.Result}");
+                        WrappedText.Draw($"→ {line.Result}");
                     break;
                 case TranslationState.Failed:
                     using (ImRaii.PushColor(ImGuiCol.Text, ErrorColor))
-                        ImGui.TextWrapped($"번역 실패: {line.Result}");
+                        WrappedText.Draw($"번역 실패: {line.Result}");
                     break;
             }
         }
@@ -99,74 +112,153 @@ internal sealed class MainWindow : Window
             ImGui.SetScrollHereY(1.0f);
     }
 
+    /// <summary>
+    /// 한국어 입력 → Enter(번역) → 일본어와 '다시 한국어로' 확인 → Enter 한 번 더(보내기).
+    /// 사용자가 일본어를 읽지 못하므로 일본어는 고칠 수 없게 보여 주고, 뜻은 다시 옮긴 한국어로 확인한다.
+    /// </summary>
     private void DrawSend()
     {
         var queue = _plugin.TranslationQueue;
 
         var channel = DrawChannelSelector();
         var prefix = channel.NeedsTellTarget ? $"/t {_tellTarget.Trim()}" : channel.Prefix;
-        var targetError = channel.NeedsTellTarget && string.IsNullOrWhiteSpace(_tellTarget)
-            ? "귓속말 받는 사람을 적는다 (이름 성 또는 이름 성@서버)."
-            : null;
 
-        // 1. 한국어 입력 → 번역 (Enter 또는 버튼)
         ImGui.TextUnformatted("한국어");
         ImGui.SetNextItemWidth(-1);
         var enter = ImGui.InputText("##ko", ref _koreanInput, 500, ImGuiInputTextFlags.EnterReturnsTrue);
+        if (enter)
+            ImGui.SetKeyboardFocusHere(-1); // Enter 를 눌러도 입력칸에 머물러 한 번 더 누르면 보내지게 한다
 
-        var canTranslate = !_busy && queue.Status == EngineStatus.Ready && !string.IsNullOrWhiteSpace(_koreanInput);
+        var korean = _koreanInput.Trim();
+        var hasTranslation = _japanese.Length > 0;
+        var stale = hasTranslation && korean != _translatedFrom;
+        var sendError = !hasTranslation || stale ? null : SendError(channel, prefix);
+
+        var canTranslate = !_busy && queue.Status == EngineStatus.Ready && korean.Length > 0 && (!hasTranslation || stale);
+        var canSend = !_busy && hasTranslation && !stale && sendError is null;
+
         using (ImRaii.Disabled(!canTranslate))
         {
-            if ((ImGui.Button("번역") || enter) && canTranslate)
-                Translate(_koreanInput.Trim());
+            if (ImGui.Button("번역") && canTranslate)
+                Translate(korean);
+        }
+        ImGui.SameLine();
+        using (ImRaii.Disabled(!canSend))
+        {
+            if (ImGui.Button("보내기") && canSend)
+                Send(channel.Label, prefix);
+        }
+        ImGui.SameLine();
+        ImGui.TextColored(DimColor, canSend ? "Enter: 보내기" : "Enter: 번역");
+
+        if (enter)
+        {
+            if (canSend)
+                Send(channel.Label, prefix);
+            else if (canTranslate)
+                Translate(korean);
         }
 
         ImGuiHelpers.ScaledDummy(4);
+        DrawTranslationCheck(stale);
 
-        // 2. 일본어 미리보기 — 보내기 전에 직접 고칠 수 있다
-        ImGui.TextUnformatted("일본어 (보내기 전에 고칠 수 있음)");
-        ImGui.SetNextItemWidth(-1);
-        ImGui.InputText("##ja", ref _japanesePreview, 500);
-
-        var error = targetError ?? (_japanesePreview.Length == 0 ? null : ChatSender.Validate(prefix, _japanesePreview));
-        using (ImRaii.Disabled(_busy || _japanesePreview.Length == 0 || error is not null))
-        {
-            if (ImGui.Button("보내기"))
-            {
-                var japanese = _japanesePreview.Trim();
-                Send(channel.Label, prefix, japanese, japanese == _translatedTo ? _translatedFrom : "");
-            }
-        }
-        ImGui.SameLine();
-        ImGui.TextColored(DimColor, $"{Encoding.UTF8.GetByteCount(ChatSender.BuildLine(prefix, _japanesePreview))} 바이트");
-
-        if (error is not null)
-            ImGui.TextColored(ErrorColor, error);
+        if (sendError is not null)
+            ImGui.TextColored(ErrorColor, sendError);
         if (_sendStatus.Length > 0)
         {
             using (ImRaii.PushColor(ImGuiCol.Text, _sendStatusIsError ? ErrorColor : DimColor))
-                ImGui.TextWrapped(_sendStatus);
+                WrappedText.Draw(_sendStatus);
         }
+    }
+
+    private void DrawTranslationCheck(bool stale)
+    {
+        if (_japanese.Length == 0)
+        {
+            WrappedText.Draw("번역하면 여기에 일본어와, 그 일본어를 다시 한국어로 옮긴 뜻이 나온다.", DimColor);
+            return;
+        }
+
+        ImGui.TextColored(DimColor, "보낼 일본어");
+        using (ImRaii.PushIndent())
+            WrappedText.Draw(_japanese);
+
+        ImGui.TextColored(DimColor, "다시 한국어로 (뜻 확인)");
+        using (ImRaii.PushIndent())
+        {
+            switch (_backState)
+            {
+                case TranslationState.Pending:
+                    ImGui.TextColored(DimColor, "… 확인 중 (기다리지 않고 보내도 된다)");
+                    break;
+                case TranslationState.Done:
+                    using (ImRaii.PushColor(ImGuiCol.Text, TranslationColor))
+                        WrappedText.Draw(_back);
+                    break;
+                case TranslationState.Failed:
+                    WrappedText.Draw($"확인 실패: {_back}", ErrorColor);
+                    break;
+            }
+        }
+
+        if (stale)
+            ImGui.TextColored(ErrorColor, "한국어가 바뀌었다 — Enter 로 다시 번역한다.");
+    }
+
+    private string? SendError(SendChannel channel, string prefix)
+    {
+        if (channel.NeedsTellTarget && string.IsNullOrWhiteSpace(_tellTarget))
+            return "귓속말 받는 사람을 적는다 (이름 성 또는 이름 성@서버).";
+        return ChatSender.Validate(prefix, _japanese);
     }
 
     private void Translate(string korean)
     {
+        var id = ++_requestId;
         _busy = true;
+        _japanese = "";
+        _back = "";
+        _backState = TranslationState.None;
         SetStatus("번역 중…", false);
+
         _plugin.TranslationQueue.TranslateOutgoingAsync(korean).ContinueWith(t =>
         {
+            if (id != _requestId)
+                return;
+
             if (t.IsCompletedSuccessfully)
             {
-                _japanesePreview = t.Result.Text;
                 _translatedFrom = korean;
-                _translatedTo = t.Result.Text.Trim();
-                SetStatus($"번역됨 ({t.Result.Elapsed.TotalSeconds:0.0}초). 확인하고 보내기를 누른다.", false);
+                _japanese = t.Result.Text;
+                SetStatus($"번역됨 ({t.Result.Elapsed.TotalSeconds:0.0}초, {Encoding.UTF8.GetByteCount(_japanese)}바이트).", false);
+                CheckMeaning(id, _japanese);
             }
             else if (!t.IsCanceled)
             {
                 SetStatus($"번역 실패: {t.Exception?.InnerException?.Message}", true);
             }
             _busy = false;
+        });
+    }
+
+    private void CheckMeaning(int id, string japanese)
+    {
+        _backState = TranslationState.Pending;
+        _plugin.TranslationQueue.TranslateBackAsync(japanese).ContinueWith(t =>
+        {
+            if (id != _requestId)
+                return;
+
+            if (t.IsCompletedSuccessfully)
+            {
+                _back = t.Result.Text;
+                _backState = TranslationState.Done;
+            }
+            else if (!t.IsCanceled)
+            {
+                _back = t.Exception?.InnerException?.Message ?? "";
+                _backState = TranslationState.Failed;
+            }
         });
     }
 
@@ -206,8 +298,10 @@ internal sealed class MainWindow : Window
         return selected;
     }
 
-    private void Send(string channelLabel, string prefix, string japanese, string korean)
+    private void Send(string channelLabel, string prefix)
     {
+        var japanese = _japanese.Trim();
+        var korean = _translatedFrom;
         _busy = true;
         SetStatus("보내는 중…", false);
         // 받은 채팅에 돌아오는 내 글은 다시 번역하지 않고 한국어 원문을 보여 준다
@@ -222,14 +316,43 @@ internal sealed class MainWindow : Window
                 }
                 else
                 {
-                    SetStatus($"보냄 ({channelLabel})", false);
+                    SetStatus($"보냄 ({channelLabel}): {korean}", false);
+                    _requestId++; // 아직 끝나지 않은 뜻 확인 결과가 다음 입력에 붙지 않게
                     _koreanInput = "";
-                    _japanesePreview = "";
                     _translatedFrom = "";
-                    _translatedTo = "";
+                    _japanese = "";
+                    _back = "";
+                    _backState = TranslationState.None;
                 }
                 _busy = false;
             });
+    }
+
+    private void DrawSettings()
+    {
+        var config = _plugin.Configuration;
+
+        ImGui.TextUnformatted("배경 불투명도");
+        var percent = (config.BackgroundOpacity ?? ImGui.GetStyle().Colors[(int)ImGuiCol.WindowBg].W) * 100f;
+        ImGui.SetNextItemWidth(220 * ImGuiHelpers.GlobalScale);
+        if (ImGui.SliderFloat("##bgAlpha", ref percent, 0f, 100f, "%.0f%%"))
+            config.BackgroundOpacity = Math.Clamp(percent / 100f, 0f, 1f);
+        if (ImGui.IsItemDeactivatedAfterEdit())
+            config.Save();
+
+        ImGui.SameLine();
+        using (ImRaii.Disabled(config.BackgroundOpacity is null))
+        {
+            if (ImGui.Button("초기화##bgAlpha"))
+            {
+                config.BackgroundOpacity = null;
+                config.Save();
+            }
+        }
+
+        WrappedText.Draw(
+            "글자는 그대로 두고 배경만 투명해진다. 제목줄 ≡ 메뉴의 '불투명도' 는 글자까지 흐려지므로 100% 로 둔다.",
+            DimColor);
     }
 
     private void SetStatus(string text, bool isError)

@@ -24,6 +24,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly WindowSystem _windowSystem = new("AetheryteChat");
     private readonly MainWindow _mainWindow;
 
+    internal Configuration Configuration { get; }
     internal ChatListener ChatListener { get; }
     internal TranslationQueue TranslationQueue { get; }
 
@@ -36,6 +37,8 @@ public sealed class Plugin : IDalamudPlugin
 
     public Plugin()
     {
+        Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+
         KoreanFont = PluginInterface.UiBuilder.FontAtlas.NewDelegateFontHandle(e => e.OnPreBuild(tk =>
         {
             var font = tk.AddDalamudDefaultFont(-1, null);
