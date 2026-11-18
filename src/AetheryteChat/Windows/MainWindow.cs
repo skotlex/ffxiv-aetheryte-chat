@@ -151,12 +151,13 @@ internal sealed class MainWindow : StyledWindow
     /// <summary>번역 도구를 바꿀 때 새 도구로 다시 번역할 최근 대화 수</summary>
     private const int RetranslateCount = 10;
 
-    private static readonly (TranslationEngine Engine, string Label)[] Engines =
+    // 목록 상자에는 이름만 보이고(길면 잘린다), 설명은 펼친 목록에만 나온다
+    private static readonly (TranslationEngine Engine, string Name, string Description)[] Engines =
     [
-        (TranslationEngine.Claude, "Claude CLI — 빠릅니다 (약 2초)"),
-        (TranslationEngine.Codex, "Codex CLI — 느리고 (약 5~6초) 토큰을 많이 씁니다"),
-        (TranslationEngine.Ollama, "Ollama (로컬) — 가장 빠르지만 (약 1초) GPU를 사용합니다"),
-        (TranslationEngine.Papago, "Papago (웹) — 막힐 수 있으며 게임 용어에 약합니다"),
+        (TranslationEngine.Claude, "Claude CLI", "빠릅니다 (약 2초)"),
+        (TranslationEngine.Codex, "Codex CLI", "느리고 (약 5~6초) 토큰을 많이 씁니다"),
+        (TranslationEngine.Ollama, "Ollama (로컬)", "가장 빠르지만 (약 1초) GPU를 사용합니다"),
+        (TranslationEngine.Papago, "Papago (웹)", "막힐 수 있으며 게임 용어에 약합니다"),
     ];
 
     private void DrawSettings()
@@ -166,13 +167,13 @@ internal sealed class MainWindow : StyledWindow
         ImGui.TextUnformatted("번역 도구");
         var current = Engines.FirstOrDefault(e => e.Engine == config.Engine);
         ImGui.SetNextItemWidth(Layout.FitWidth(320 * ImGuiHelpers.GlobalScale));
-        using (var combo = ImRaii.Combo("##engine", current.Label ?? config.Engine.ToString()))
+        using (var combo = ImRaii.Combo("##engine", current.Name ?? config.Engine.ToString()))
         {
             if (combo.Success)
             {
-                foreach (var (engine, label) in Engines)
+                foreach (var (engine, name, description) in Engines)
                 {
-                    if (ImGui.Selectable(label, engine == config.Engine) && engine != config.Engine)
+                    if (ImGui.Selectable($"{name} — {description}", engine == config.Engine) && engine != config.Engine)
                     {
                         config.Engine = engine;
                         config.Save();
