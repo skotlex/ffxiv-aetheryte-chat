@@ -54,6 +54,11 @@ internal sealed class SendPanel(Plugin plugin)
             ImGui.SetKeyboardFocusHere(-1); // Enter 를 눌러도 입력칸에 머물러 한 번 더 누르면 보내지게 한다
 
         var korean = _koreanInput.Trim();
+
+        // 입력칸을 비우면 남아 있던 번역·뜻 확인·안내를 지워 처음 크기로 돌아간다 (진행 중인 번역 결과도 버린다)
+        if (korean.Length == 0 && HasLeftovers)
+            Reset();
+
         var hasTranslation = _japanese.Length > 0;
         var stale = hasTranslation && korean != _translatedFrom;
         var sendError = !hasTranslation || stale ? null : SendError(channel, prefix);
@@ -146,6 +151,9 @@ internal sealed class SendPanel(Plugin plugin)
 
         plugin.TranslationQueue.TranslateOutgoingAsync(korean).ContinueWith(t =>
         {
+            // 결과를 버리는 경우(그사이 입력칸을 비움)에도 '번역 중' 은 풀어야 다음 번역을 할 수 있다.
+            // 번역 중에는 새 번역을 시작할 수 없으므로 여기서 풀어도 다른 번역의 상태를 건드리지 않는다
+            _busy = false;
             if (id != _requestId)
                 return;
 
@@ -160,7 +168,6 @@ internal sealed class SendPanel(Plugin plugin)
             {
                 SetStatus($"번역 실패: {t.Exception?.InnerException?.Message}", true);
             }
-            _busy = false;
         });
     }
 
@@ -260,16 +267,29 @@ internal sealed class SendPanel(Plugin plugin)
                 }
                 else
                 {
-                    SetStatus($"보냈습니다 ({channelLabel}): {korean}", false);
-                    _requestId++; // 아직 끝나지 않은 뜻 확인 결과가 다음 입력에 붙지 않게
+                    // 보낸 글은 받은 채팅에 [내가 쓴 글] 로 돌아오므로 알림 줄 없이 처음 크기로 돌아간다
                     _koreanInput = "";
-                    _translatedFrom = "";
-                    _japanese = "";
-                    _back = "";
-                    _backState = TranslationState.None;
+                    Reset();
                 }
                 _busy = false;
             });
+    }
+
+    /// <summary>번역·뜻 확인·안내가 남아 있는지</summary>
+    private bool HasLeftovers => _japanese.Length > 0 || _backState != TranslationState.None || _sendStatus.Length > 0;
+
+    /// <summary>
+    /// 번역·뜻 확인·안내를 지워 처음 모양으로 돌린다. 아직 끝나지 않은 번역·뜻 확인 결과는 요청 번호로 버린다.
+    /// 입력칸(_koreanInput)은 건드리지 않는다
+    /// </summary>
+    private void Reset()
+    {
+        _requestId++;
+        _translatedFrom = "";
+        _japanese = "";
+        _back = "";
+        _backState = TranslationState.None;
+        SetStatus("", false);
     }
 
     private void SetStatus(string text, bool isError)
