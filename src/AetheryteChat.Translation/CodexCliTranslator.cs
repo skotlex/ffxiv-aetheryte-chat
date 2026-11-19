@@ -51,7 +51,8 @@ public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator
     private readonly object _cacheLock = new();
     private readonly Dictionary<CacheKey, string> _cache = new();
     private readonly Queue<CacheKey> _cacheOrder = new();
-    private sealed record CacheKey(string Text, TranslationDirection Direction, string Glossary,
+    /// <param name="Terms">이 줄에 맞은 용어 (프롬프트에 넣는 그대로). 용어집 전체가 아니라 이것만 같으면 같은 번역이다</param>
+    private sealed record CacheKey(string Text, TranslationDirection Direction, string Terms,
         string? Model, string Effort, bool Lightweight);
 
     public string Name => "Codex CLI";
@@ -130,7 +131,9 @@ public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator
     {
         ct.ThrowIfCancellationRequested();
         var lightweight = await UseLightweightAsync();
-        var cacheKey = new CacheKey(text, direction, options.Glossary, options.Model,
+        var terms = options.Glossary.Match(text, direction);
+        var userTurn = Prompts.UserTurn(text, terms, direction);
+        var cacheKey = new CacheKey(text, direction, Glossary.Format(terms, direction), options.Model,
             options.ReasoningEffort, lightweight);
         lock (_cacheLock)
         {
@@ -154,11 +157,11 @@ public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator
         string? instructionsFile = null;
         try
         {
-            var instructions = Prompts.For(direction, options.Glossary);
-            var prompt = instructions + "\n\n" + Prompts.WrapMessage(text);
+            var instructions = Prompts.For(direction);
+            var prompt = instructions + "\n\n" + userTurn;
             if (lightweight)
             {
-                // 요청마다 별도 파일을 써서 송신/수신 번역과 용어집 변경이 서로 섞이지 않는다.
+                // 요청마다 별도 파일을 써서 동시에 도는 송신/수신 번역이 서로의 파일을 지우지 않는다.
                 instructionsFile = Path.Combine(WorkDir, $"translation-{Guid.NewGuid():N}.txt");
                 await File.WriteAllTextAsync(instructionsFile, instructions, ct);
                 args.AddRange([
@@ -180,11 +183,11 @@ public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator
                     "-c", "tools.update_plan.enabled=false",
                     "-c", "web_search=\"disabled\"",
                 ]);
-                prompt = Prompts.WrapMessage(text);
+                prompt = userTurn;
             }
             var run = await CliRunner.RunAsync(Executable, args, prompt, WorkDir, options.Timeout, ct);
             var result = ParseEvents(run.StdOut, run.StdErr, run.ExitCode, run.Elapsed);
-            // 성공한 번역만 메모리에 보관한다. 방향·용어집·모델·추론 설정이 다르면 새로 번역한다.
+            // 성공한 번역만 메모리에 보관한다. 방향·맞은 용어·모델·추론 설정이 다르면 새로 번역한다.
             if (!string.IsNullOrWhiteSpace(result.Text))
             {
                 lock (_cacheLock)

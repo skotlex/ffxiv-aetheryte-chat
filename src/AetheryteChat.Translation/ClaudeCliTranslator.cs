@@ -72,13 +72,15 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
             "--strict-mcp-config",
             "--setting-sources", "",
             "--model", options.Model,
-            "--system-prompt", Prompts.For(direction, options.Glossary),
+            "--system-prompt", Prompts.For(direction),
         };
         if (!string.IsNullOrEmpty(options.Effort))
             args.AddRange(["--effort", options.Effort]);
 
+        // 용어는 명령줄이 아니라 stdin 으로 넘긴다 — 윈도우 명령줄 길이 한도(약 32,000자)에 걸리지 않게
+        var terms = options.Glossary.Match(text, direction);
         var run = await CliRunner.RunAsync(
-            Executable, args, Prompts.WrapMessage(text), WorkDir, options.Timeout, ct);
+            Executable, args, Prompts.UserTurn(text, terms, direction), WorkDir, options.Timeout, ct);
 
         if (run.ExitCode != 0 && string.IsNullOrWhiteSpace(run.StdOut))
             throw new TranslationException($"claude 종료 코드 {run.ExitCode}: {Trim(run.StdErr)}")

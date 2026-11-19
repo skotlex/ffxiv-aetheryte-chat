@@ -1,9 +1,14 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 기본 용어집. 코드를 고치지 않고 용어만 덧붙일 수 있게 파일로 둔다 -->
+    <EmbeddedResource Include="default-glossary.txt" LogicalName="AetheryteChat.Translation.default-glossary.txt" />
+  </ItemGroup>
 
 </Project>

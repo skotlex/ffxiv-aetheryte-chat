@@ -8,6 +8,9 @@
 //       --effort <low|medium|high> (claude: --effort, codex: reasoning effort), --exe <실행 파일 경로>,
 //       --endpoint <url> (ollama 주소, 기본 http://127.0.0.1:11434)
 //       --codex-standard (Codex 경량 모드를 끄고 기존 방식으로 비교)
+//       --glossary <파일> (기본 용어집 대신 이 파일을 쓴다 — 용어집을 바꾸기 전/후 비교), --no-glossary (용어집 없이)
+//
+//   dotnet run --project tools/TranslatorConsole -- match ja2ko "零式4層、初見です"   (번역하지 않고 맞은 용어만)
 
 using System.Text;
 using AetheryteChat.Translation;
@@ -18,6 +21,8 @@ Console.OutputEncoding = Encoding.UTF8;
 string engine = "claude";
 string? model = null, effort = null, exe = null, endpoint = null;
 bool codexLightweight = true;
+string? glossaryPath = null;
+bool noGlossary = false;
 var positional = new List<string>();
 for (var i = 0; i < args.Length; i++)
 {
@@ -29,6 +34,8 @@ for (var i = 0; i < args.Length; i++)
         case "--exe": exe = args[++i]; break;
         case "--endpoint": endpoint = args[++i]; break;
         case "--codex-standard": codexLightweight = false; break;
+        case "--glossary": glossaryPath = args[++i]; break;
+        case "--no-glossary": noGlossary = true; break;
         default: positional.Add(args[i]); break;
     }
 }
@@ -37,8 +44,34 @@ if (positional.Count == 0)
 {
     Console.Error.WriteLine("사용법: TranslatorConsole (auth | ja2ko | ko2ja) [--engine claude|codex|ollama|papago] [--model m] [--effort e] [--exe path] [--endpoint url] [문장]");
     Console.Error.WriteLine("        TranslatorConsole ollama (size | pull | ps | unload) [--model m] [--endpoint url]");
+    Console.Error.WriteLine("        TranslatorConsole match (ja2ko | ko2ja) [--glossary 파일] [문장]   (맞은 용어만)");
     Console.Error.WriteLine("        --codex-standard: Codex 경량 모드 끄기 (비교용)");
+    Console.Error.WriteLine("        --glossary <파일>: 기본 용어집 대신 이 파일, --no-glossary: 용어집 없이");
     return 2;
+}
+
+var glossary = noGlossary ? Glossary.Empty
+    : glossaryPath is not null ? Glossary.Parse(File.ReadAllText(glossaryPath))
+    : Glossary.Default;
+
+// 번역하지 않고 이 문장에 맞은 용어만 보여 준다 (용어 고르기 시험)
+if (positional[0] == "match")
+{
+    var matchDirection = positional.ElementAtOrDefault(1) == "ko2ja" ? TranslationDirection.KoToJa : TranslationDirection.JaToKo;
+    Console.Error.WriteLine($"[{matchDirection}] 용어 {glossary.Count}개{(glossary.InvalidLines > 0 ? $", 읽지 못한 줄 {glossary.InvalidLines}개" : "")}");
+    var texts = positional.Count > 2 ? [string.Join(' ', positional.Skip(2))] : ReadLines();
+    foreach (var text in texts)
+    {
+        var terms = glossary.Match(text, matchDirection);
+        Console.WriteLine($"{text}\n  {(terms.Count == 0 ? "(없음)" : Glossary.Format(terms, matchDirection).Replace("\n", " / "))}");
+    }
+    return 0;
+
+    static IEnumerable<string> ReadLines()
+    {
+        while (Console.ReadLine() is { Length: > 0 } line)
+            yield return line.TrimStart('\uFEFF');
+    }
 }
 
 // Ollama 모델 관리 (번역 도구 탭의 받기·GPU 상태·내리기를 게임 없이 시험)
@@ -99,21 +132,21 @@ string? exePath;
 switch (engine)
 {
     case "claude":
-        var claude = new ClaudeCliOptions { ExecutablePath = exe, Effort = effort };
+        var claude = new ClaudeCliOptions { ExecutablePath = exe, Effort = effort, Glossary = glossary };
         if (model is not null)
             claude.Model = model;
         translator = new ClaudeCliTranslator(claude);
         exePath = exe ?? ClaudeCliLocator.Find();
         break;
     case "codex":
-        var codex = new CodexCliOptions { ExecutablePath = exe, Model = model, Lightweight = codexLightweight };
+        var codex = new CodexCliOptions { ExecutablePath = exe, Model = model, Lightweight = codexLightweight, Glossary = glossary };
         if (effort is not null)
             codex.ReasoningEffort = effort;
         translator = new CodexCliTranslator(codex);
         exePath = exe ?? CodexCliLocator.Find();
         break;
     case "ollama":
-        var ollama = new OllamaOptions();
+        var ollama = new OllamaOptions { Glossary = glossary };
         if (model is not null)
             ollama.Model = model;
         if (endpoint is not null)
@@ -167,6 +200,8 @@ try
         {
             var r = await translator.TranslateAsync(text, direction);
             Console.WriteLine($"{text}\n→ {r.Text}");
+            if (translator is not PapagoWebTranslator && glossary.Match(text, direction) is { Count: > 0 } terms)
+                Console.Error.WriteLine($"   용어: {Glossary.Format(terms, direction).Replace("\n", " / ")}");
             Console.Error.WriteLine($"   {r.Elapsed.TotalSeconds:0.0}초, 입력 {r.InputTokens?.ToString("N0") ?? "?"} / 출력 {r.OutputTokens?.ToString("N0") ?? "?"} 토큰");
         }
         catch (TranslationException e)

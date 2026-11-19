@@ -22,7 +22,7 @@ public sealed class ClaudeSettings
 
     public int TimeoutSeconds { get; set; } = (int)Defaults.Timeout.TotalSeconds;
 
-    internal ClaudeCliOptions ToOptions(string glossary) => new()
+    internal ClaudeCliOptions ToOptions(Glossary glossary) => new()
     {
         ExecutablePath = EngineSettings.OrNull(ExecutablePath),
         Model = EngineSettings.OrNull(Model) ?? Defaults.Model,
@@ -49,7 +49,7 @@ public sealed class CodexSettings
 
     public int TimeoutSeconds { get; set; } = (int)Defaults.Timeout.TotalSeconds;
 
-    internal CodexCliOptions ToOptions(string glossary) => new()
+    internal CodexCliOptions ToOptions(Glossary glossary) => new()
     {
         ExecutablePath = EngineSettings.OrNull(ExecutablePath),
         Model = EngineSettings.OrNull(Model),
@@ -78,7 +78,7 @@ public sealed class OllamaSettings
 
     public int TimeoutSeconds { get; set; } = (int)Defaults.Timeout.TotalSeconds;
 
-    internal OllamaOptions ToOptions(string glossary) => new()
+    internal OllamaOptions ToOptions(Glossary glossary) => new()
     {
         Endpoint = EngineSettings.OrNull(Endpoint) ?? Defaults.Endpoint,
         Model = EngineSettings.OrNull(Model) ?? OllamaModels.RecommendForThisPc().Model,

@@ -44,6 +44,8 @@ public sealed class Plugin : IDalamudPlugin
     public Plugin()
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        if (Configuration.Migrate())
+            Configuration.Save();
 
         WindowFont = new WindowFont(PluginInterface.UiBuilder.FontAtlas, Configuration.WindowFont);
 
@@ -78,7 +80,7 @@ public sealed class Plugin : IDalamudPlugin
     /// <summary>설정의 번역 도구와 그 도구의 설정으로 엔진을 만든다</summary>
     private ITranslator CreateTranslator()
     {
-        var glossary = Configuration.Glossary ?? Prompts.DefaultGlossary;
+        var glossary = Configuration.BuildGlossary();
 
         // Ollama 를 이 PC 에서 쓰지 않게 되면 플러그인이 켠 서버는 끈다 (메모리를 돌려준다)
         var usesLocalOllama = Configuration.Engine == TranslationEngine.Ollama && OllamaModels.IsLocal(Configuration.Ollama.Endpoint);
@@ -95,7 +97,7 @@ public sealed class Plugin : IDalamudPlugin
         };
     }
 
-    private OllamaTranslator CreateOllamaTranslator(string glossary)
+    private OllamaTranslator CreateOllamaTranslator(Glossary glossary)
     {
         var options = Configuration.Ollama.ToOptions(glossary);
         // 꺼져 있으면 창 없이 켠다 (Ollama 앱의 환영 화면·작업 표시줄 아이콘 없이)
@@ -111,7 +113,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (Configuration.Engine != TranslationEngine.Ollama || OllamaHost.OwnsRunningServer)
             return;
-        var settings = Configuration.Ollama.ToOptions("");
+        var settings = Configuration.Ollama.ToOptions(Glossary.Empty);
         try
         {
             OllamaModels.UnloadAsync(settings.Endpoint, settings.Model).Wait(TimeSpan.FromSeconds(2));

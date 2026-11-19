@@ -1,4 +1,5 @@
 using Dalamud.Configuration;
+using TermGlossary = AetheryteChat.Translation.Glossary;
 
 namespace AetheryteChat;
 
@@ -68,7 +69,16 @@ public sealed class Configuration : IPluginConfiguration
     public CodexSettings Codex { get; set; } = new();
     public OllamaSettings Ollama { get; set; } = new();
 
-    /// <summary>번역 지시문에 넣는 용어집 (한 줄에 '일본어 → 한국어'). null 이면 기본 용어집, 빈 문자열이면 용어집 없음</summary>
+    /// <summary>플러그인에 들어 있는 기본 용어를 쓸지. 끄면 내 용어만 쓴다</summary>
+    public bool UseDefaultGlossary { get; set; } = true;
+
+    /// <summary>내 용어 (한 줄에 '일본어 → 한국어'). 기본 용어와 일본어가 같으면 이쪽이 우선한다</summary>
+    public string PersonalGlossary { get; set; } = "";
+
+    /// <summary>
+    /// 버전 0 의 용어집: null 이면 기본 용어집, 빈 문자열이면 용어집 없음, 그 밖은 기본 용어집을 고친 전체 텍스트.
+    /// 이렇게 두면 한 번 고친 사람은 기본 용어집이 늘어도 받지 못해 버전 1 에서 나눴다. 옮길 때만 읽고 null 로 비운다
+    /// </summary>
     public string? Glossary { get; set; }
 
     /// <summary>
@@ -80,4 +90,37 @@ public sealed class Configuration : IPluginConfiguration
     public SendPanelPlacement SendPanelPlacement { get; set; } = SendPanelPlacement.BelowChat;
 
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
+
+    public const int CurrentVersion = 1;
+
+    /// <summary>번역에 쓸 용어집: 기본 용어(켜 두었으면) + 내 용어</summary>
+    internal TermGlossary BuildGlossary() =>
+        TermGlossary.Merge(UseDefaultGlossary ? TermGlossary.Default : TermGlossary.Empty, TermGlossary.Parse(PersonalGlossary));
+
+    /// <summary>이전 버전의 설정을 지금 형식으로 옮긴다. 바꿨으면 true (저장은 부르는 쪽이 한다)</summary>
+    internal bool Migrate()
+    {
+        if (Version >= CurrentVersion)
+            return false;
+
+        if (Version < 1)
+        {
+            if (Glossary == "")
+            {
+                UseDefaultGlossary = false; // '용어집 없음' 이던 사람은 그대로 용어 없이 번역한다
+            }
+            else if (Glossary is not null)
+            {
+                // 기본 용어와 똑같은 줄은 빼고 나머지(고치거나 덧붙인 줄)를 내 용어로 옮긴다
+                var defaults = TermGlossary.Default.Entries.ToHashSet();
+                PersonalGlossary = string.Join('\n', Glossary.ReplaceLineEndings("\n").Split('\n')
+                    .Select(l => l.Trim())
+                    .Where(l => l.Length > 0 && !(TermGlossary.ParseLine(l) is { } e && defaults.Contains(e))));
+            }
+            Glossary = null;
+        }
+
+        Version = CurrentVersion;
+        return true;
+    }
 }

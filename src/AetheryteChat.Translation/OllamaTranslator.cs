@@ -145,8 +145,12 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
             ["options"] = new JsonObject { ["temperature"] = 0.2 },
             ["messages"] = new JsonArray
             {
-                new JsonObject { ["role"] = "system", ["content"] = Prompts.For(direction, options.Glossary) },
-                new JsonObject { ["role"] = "user", ["content"] = Prompts.WrapMessage(text) },
+                new JsonObject { ["role"] = "system", ["content"] = Prompts.For(direction) },
+                new JsonObject
+                {
+                    ["role"] = "user",
+                    ["content"] = Prompts.UserTurn(text, options.Glossary.Match(text, direction), direction),
+                },
             },
         };
 

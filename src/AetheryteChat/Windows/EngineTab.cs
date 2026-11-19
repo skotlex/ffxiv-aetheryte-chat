@@ -701,25 +701,54 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
     private void DrawGlossary(Configuration config)
     {
         Heading("용어집");
-        HelpText("한 줄에 '일본어 → 한국어' 하나. 번역 지시문에 넣어 게임 용어를 유저들이 쓰는 말로 옮기게 합니다. " +
-                 "보낼 때(한→일)는 거꾸로 읽습니다. 길수록 번역마다 쓰는 토큰이 조금 늘어납니다.");
+        HelpText("게임 용어를 한국 서버 유저들이 쓰는 말로 옮기게 하는 표입니다. 번역할 때 그 줄에 나온 용어만 함께 보내므로, " +
+                 "용어가 많아도 번역마다 쓰는 토큰은 거의 늘지 않습니다.");
+        var size = new Vector2(Layout.FitWidth(InputWidth), ImGui.GetTextLineHeight() * 8 + ImGui.GetStyle().FramePadding.Y * 2);
 
-        var text = config.Glossary ?? Prompts.DefaultGlossary.ReplaceLineEndings("\n");
-        var height = ImGui.GetTextLineHeight() * 8 + ImGui.GetStyle().FramePadding.Y * 2;
-        if (ImGui.InputTextMultiline("##glossary", ref text, 8000, new Vector2(Layout.FitWidth(InputWidth), height)))
-            config.Glossary = text;
+        var useDefault = config.UseDefaultGlossary;
+        if (ImGui.Checkbox($"기본 용어 쓰기 ({Glossary.Default.Count}개)", ref useDefault))
+        {
+            config.UseDefaultGlossary = useDefault;
+            Apply();
+        }
+        using (ImRaii.PushIndent())
+        {
+            HelpText("플러그인과 함께 배포되며, 업데이트하면 함께 늘어납니다.");
+            using var node = ImRaii.TreeNode("기본 용어 보기");
+            if (node.Success)
+            {
+                // 고칠 수 없게 하되 글을 골라 복사할 수 있게 입력칸으로 보여 준다. 길이 한도는 UTF-8 바이트 수다
+                var defaults = DefaultGlossaryText;
+                ImGui.InputTextMultiline("##defaultGlossary", ref defaults, System.Text.Encoding.UTF8.GetByteCount(defaults) + 1,
+                    size, ImGuiInputTextFlags.ReadOnly);
+            }
+        }
+
+        ImGuiHelpers.ScaledDummy(4);
+        ImGui.TextUnformatted("내 용어");
+        HelpText("한 줄에 '일본어 → 한국어' 하나. 기본 용어와 일본어가 같으면 내 용어가 우선합니다. " +
+                 "보낼 때(한→일)는 한국어 쪽으로 찾아 거꾸로 씁니다.");
+        var text = config.PersonalGlossary;
+        if (ImGui.InputTextMultiline("##personalGlossary", ref text, 8000, size))
+            config.PersonalGlossary = text;
         if (ImGui.IsItemDeactivatedAfterEdit())
             Apply();
 
-        using (ImRaii.Disabled(config.Glossary is null))
+        if (_parsedPersonalText != config.PersonalGlossary)
         {
-            if (ImGui.Button("기본 용어집으로"))
-            {
-                config.Glossary = null;
-                Apply();
-            }
+            _parsedPersonalText = config.PersonalGlossary;
+            _parsedPersonal = Glossary.Parse(config.PersonalGlossary);
         }
+        if (_parsedPersonal.InvalidLines > 0)
+            WrappedText.Draw($"'→' 가 없거나 한쪽이 빈 줄 {_parsedPersonal.InvalidLines}개는 쓰지 않습니다.", ErrorColor);
     }
+
+    /// <summary>기본 용어 보기 칸에 보여 줄 텍스트 (플러그인을 켜 있는 동안 바뀌지 않는다)</summary>
+    private static readonly string DefaultGlossaryText = Glossary.Default.ToText();
+
+    // 내 용어를 읽은 결과. 글이 바뀔 때만 다시 읽는다
+    private string? _parsedPersonalText;
+    private Glossary _parsedPersonal = Glossary.Empty;
 
     /// <summary>
     /// 실행 파일 경로. 비우면 자동으로 찾고 찾은 경로를 보여 준다. 게임이 PATH 를 다르게 보거나 특이한 곳에 설치했을 때 직접 넣는다
