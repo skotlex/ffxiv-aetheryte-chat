@@ -107,17 +107,36 @@ public sealed class Plugin : IDalamudPlugin
         if (chain.Count == 0)
             return new NoEngineTranslator();
         var glossary = Configuration.BuildGlossary();
-        return new FallbackTranslator(chain.Select((engine, i) => (engine.ToString(), CreateTranslator(engine, glossary, primary: i == 0))));
+        return new FallbackTranslator(chain.Select((engine, i) =>
+            (engine.ToString(), CreateTranslator(engine, glossary, primary: i == 0, hasNext: i < chain.Count - 1))));
     }
 
-    private ITranslator CreateTranslator(TranslationEngine engine, Glossary glossary, bool primary) => engine switch
+    /// <summary>
+    /// 뒤에 예비 도구가 있을 때 Claude·Codex 를 기다리는 최대 시간. 설정한 제한 시간이 더 길어도 이만큼 지나면 다음 도구로 넘어간다 —
+    /// 평소 2~5초, Codex 가 서버에서 늦을 때도 18초 안이었다(2026-11-19 실측). 막힌 도구의 제한 시간(기본 30·60초)을 줄마다 기다리지 않게.
+    /// Ollama 는 빼다 — 처음 모델을 메모리에 올리는 데 CPU 노트북에서 17초쯤 걸린다
+    /// </summary>
+    internal static readonly TimeSpan BeforeFallbackTimeout = TimeSpan.FromSeconds(20);
+
+    /// <summary>이 도구 뒤에 예비 도구가 있어 제한 시간을 <see cref="BeforeFallbackTimeout"/> 로 줄이는지</summary>
+    internal static bool CapsTimeout(TranslationEngine engine, bool hasNext) =>
+        hasNext && engine is TranslationEngine.Claude or TranslationEngine.Codex;
+
+    private ITranslator CreateTranslator(TranslationEngine engine, Glossary glossary, bool primary, bool hasNext) => engine switch
     {
-        TranslationEngine.Claude => new ClaudeCliTranslator(Configuration.Claude.ToOptions(glossary)),
-        TranslationEngine.Codex => new CodexCliTranslator(Configuration.Codex.ToOptions(glossary)),
+        TranslationEngine.Claude => new ClaudeCliTranslator(Cap(Configuration.Claude.ToOptions(glossary), engine, hasNext)),
+        TranslationEngine.Codex => new CodexCliTranslator(Cap(Configuration.Codex.ToOptions(glossary), engine, hasNext)),
         TranslationEngine.Ollama => CreateOllamaTranslator(glossary, primary),
         TranslationEngine.Papago => new PapagoWebTranslator(),
         _ => new NoEngineTranslator(),
     };
+
+    private static T Cap<T>(T options, TranslationEngine engine, bool hasNext) where T : TranslatorOptions
+    {
+        if (CapsTimeout(engine, hasNext) && options.Timeout > BeforeFallbackTimeout)
+            options.Timeout = BeforeFallbackTimeout;
+        return options;
+    }
 
     /// <param name="primary">
     /// 1순위일 때만 미리 GPU 에 올린다 — 예비 도구로만 둔 Ollama 가 쓰지도 않는 동안 게임의 GPU 메모리를 차지하지 않게

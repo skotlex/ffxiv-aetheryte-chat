@@ -299,7 +299,7 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
         HelpText("haiku를 권장합니다 — 빠르고 사용량이 적습니다. sonnet·opus는 더 정확할 수 있지만 느리고 사용량을 더 씁니다.");
         DrawChoice("생각 정도 (effort)", "claudeEffort", s.Effort, v => s.Effort = v,
             [(null, "기본"), ("low", "low"), ("medium", "medium"), ("high", "high")]);
-        DrawTimeout("claudeTimeout", s.TimeoutSeconds, v => s.TimeoutSeconds = v);
+        DrawTimeout("claudeTimeout", s.TimeoutSeconds, v => s.TimeoutSeconds = v, TranslationEngine.Claude);
     }
 
     private void DrawCodex(CodexSettings s)
@@ -328,7 +328,7 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
         DrawTextSetting("모델", "codexModel", "비우면 Codex 기본 모델", s.Model, v => s.Model = v, []);
         DrawChoice("생각 정도 (reasoning effort)", "codexEffort", s.ReasoningEffort, v => s.ReasoningEffort = v ?? "low",
             [("low", "low (권장)"), ("medium", "medium"), ("high", "high")]);
-        DrawTimeout("codexTimeout", s.TimeoutSeconds, v => s.TimeoutSeconds = v);
+        DrawTimeout("codexTimeout", s.TimeoutSeconds, v => s.TimeoutSeconds = v, TranslationEngine.Codex);
     }
 
     private void DrawOllama(OllamaSettings s)
@@ -865,7 +865,8 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
         ImGuiHelpers.ScaledDummy(4);
         ImGui.TextUnformatted("내 용어");
         HelpText("한 줄에 '일본어 → 한국어' 하나. 기본 용어와 일본어가 같으면 내 용어가 우선합니다. " +
-                 "보낼 때(한→일)는 한국어 쪽으로 찾아 거꾸로 씁니다.");
+                 "보낼 때(한→일)는 한국어 쪽으로 찾아 거꾸로 씁니다. " +
+                 "한국어 쪽에 '|' 로 다른 표현을 더하면 보낼 때 그 말도 찾습니다 (예: 初見 → 초행 | 처음인데).");
         var text = config.PersonalGlossary;
         if (ImGui.InputTextMultiline("##personalGlossary", ref text, 8000, size))
             config.PersonalGlossary = text;
@@ -975,7 +976,8 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
         }
     }
 
-    private void DrawTimeout(string id, int seconds, Action<int> set)
+    /// <param name="engine">뒤에 예비 도구가 있으면 줄어드는 제한 시간을 알릴 도구 (Claude·Codex)</param>
+    private void DrawTimeout(string id, int seconds, Action<int> set, TranslationEngine? engine = null)
     {
         ImGui.TextUnformatted("제한 시간");
         var value = Math.Clamp(seconds, EngineSettings.MinTimeoutSeconds, EngineSettings.MaxTimeoutSeconds);
@@ -986,6 +988,11 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
             Apply();
         Layout.SameLineIfFits(Layout.TextWidth("이 시간 안에 답이 없으면 그 줄은 실패로 둡니다"));
         ImGui.TextColored(DimColor, "이 시간 안에 답이 없으면 그 줄은 실패로 둡니다");
+
+        var chain = Config.EngineChain();
+        var limit = (int)Plugin.BeforeFallbackTimeout.TotalSeconds;
+        if (engine is { } e && chain.IndexOf(e) is var at and >= 0 && Plugin.CapsTimeout(e, at < chain.Count - 1) && value > limit)
+            HelpText($"뒤에 예비 도구가 있어 {limit}초가 지나면 기다리지 않고 다음 도구로 넘어갑니다.");
     }
 
     private static void Heading(string text) => ImGui.TextUnformatted(text);
