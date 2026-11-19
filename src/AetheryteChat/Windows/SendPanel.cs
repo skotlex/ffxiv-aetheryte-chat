@@ -185,6 +185,7 @@ internal sealed class SendPanel(Plugin plugin)
         {
             _translatedFrom = korean;
             _japanese = t.Result.Text;
+            _engine = t.Result.Engine ?? _engine; // 예비 도구로 넘어갔으면 그 도구
             SetStatus("", false); // '번역 중…' 을 지운다. 결과는 '보낼 일본어' 줄이 보여 준다
             CheckMeaning(id, _japanese);
         }

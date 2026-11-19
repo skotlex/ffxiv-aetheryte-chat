@@ -91,29 +91,42 @@ public sealed class Plugin : IDalamudPlugin
             SendWindow.IsOpen = _mainWindow.IsOpen;
     }
 
-    /// <summary>설정의 번역 도구와 그 도구의 설정으로 엔진을 만든다</summary>
+    /// <summary>
+    /// 설정의 번역 도구들(1순위 + 예비 도구)과 각 도구의 설정으로 엔진을 만든다.
+    /// 우선순위대로 쓰고 문제가 생기면 다음 도구로 넘어가는 <see cref="FallbackTranslator"/> 로 묶는다
+    /// </summary>
     private ITranslator CreateTranslator()
     {
-        var glossary = Configuration.BuildGlossary();
+        var chain = Configuration.EngineChain();
 
         // Ollama 를 이 PC 에서 쓰지 않게 되면 플러그인이 켠 서버는 끈다 (메모리를 돌려준다)
-        var usesLocalOllama = Configuration.Engine == TranslationEngine.Ollama && OllamaModels.IsLocal(Configuration.Ollama.Endpoint);
+        var usesLocalOllama = chain.Contains(TranslationEngine.Ollama) && OllamaModels.IsLocal(Configuration.Ollama.Endpoint);
         if (!usesLocalOllama)
             OllamaHost.StopServerInBackground();
 
-        return Configuration.Engine switch
-        {
-            TranslationEngine.Claude => new ClaudeCliTranslator(Configuration.Claude.ToOptions(glossary)),
-            TranslationEngine.Codex => new CodexCliTranslator(Configuration.Codex.ToOptions(glossary)),
-            TranslationEngine.Ollama => CreateOllamaTranslator(glossary),
-            TranslationEngine.Papago => new PapagoWebTranslator(),
-            _ => new NoEngineTranslator(),
-        };
+        if (chain.Count == 0)
+            return new NoEngineTranslator();
+        var glossary = Configuration.BuildGlossary();
+        return new FallbackTranslator(chain.Select((engine, i) => (engine.ToString(), CreateTranslator(engine, glossary, primary: i == 0))));
     }
 
-    private OllamaTranslator CreateOllamaTranslator(Glossary glossary)
+    private ITranslator CreateTranslator(TranslationEngine engine, Glossary glossary, bool primary) => engine switch
+    {
+        TranslationEngine.Claude => new ClaudeCliTranslator(Configuration.Claude.ToOptions(glossary)),
+        TranslationEngine.Codex => new CodexCliTranslator(Configuration.Codex.ToOptions(glossary)),
+        TranslationEngine.Ollama => CreateOllamaTranslator(glossary, primary),
+        TranslationEngine.Papago => new PapagoWebTranslator(),
+        _ => new NoEngineTranslator(),
+    };
+
+    /// <param name="primary">
+    /// 1순위일 때만 미리 GPU 에 올린다 — 예비 도구로만 둔 Ollama 가 쓰지도 않는 동안 게임의 GPU 메모리를 차지하지 않게
+    /// (예비로 넘어오면 첫 번역 때 올린다)
+    /// </param>
+    private OllamaTranslator CreateOllamaTranslator(Glossary glossary, bool primary)
     {
         var options = Configuration.Ollama.ToOptions(glossary);
+        options.Preload &= primary;
         // 꺼져 있으면 창 없이 켠다 (Ollama 앱의 환영 화면·작업 표시줄 아이콘 없이)
         options.EnsureServerAsync = ct => OllamaHost.EnsureServerAsync(options.Endpoint, ct);
         return new OllamaTranslator(options);
@@ -125,7 +138,7 @@ public sealed class Plugin : IDalamudPlugin
     /// </summary>
     private void UnloadOllamaModel()
     {
-        if (Configuration.Engine != TranslationEngine.Ollama || OllamaHost.OwnsRunningServer)
+        if (!Configuration.EngineChain().Contains(TranslationEngine.Ollama) || OllamaHost.OwnsRunningServer)
             return;
         var settings = Configuration.Ollama.ToOptions(Glossary.Empty);
         try

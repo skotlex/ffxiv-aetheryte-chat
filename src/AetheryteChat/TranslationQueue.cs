@@ -75,8 +75,21 @@ internal sealed partial class TranslationQueue : IDisposable
     public bool AutoTranslate { get; set; } = true;
     public string EngineName => _translator.Name;
 
-    /// <summary>지금 엔진. 번역 도구 탭이 엔진별 상태(예: Codex 경량 번역을 쓰는지)를 보여 줄 때 쓴다</summary>
+    /// <summary>지금 엔진 (우선순위대로 묶은 도구들)</summary>
     public ITranslator Translator => _translator;
+
+    /// <summary>
+    /// 이 도구의 상태와 번역기. 번역 도구 탭이 도구별 상태(로그인·Codex 경량 번역 등)를 보여 줄 때 쓴다.
+    /// 지금 우선순위에 없는 도구면 null
+    /// </summary>
+    public FallbackTranslator.Member? Member(TranslationEngine engine) =>
+        (_translator as FallbackTranslator)?.Find(engine.ToString());
+
+    /// <summary>로그인 버튼을 누르면 로그인할 도구의 이름 (예비 도구까지 보고 로그인이 안 된 첫 도구)</summary>
+    public string? LoginTargetName => (_translator as FallbackTranslator)?.LoginTarget?.Translator.Name;
+
+    /// <summary>1순위를 쓰지 못해 예비 도구로 번역하는 중이면 그 이유 (상태 줄에 덧붙인다)</summary>
+    public string? PrimaryIssue => (_translator as FallbackTranslator)?.PrimaryIssue;
     public string NotReadyHint => _translator.NotReadyHint;
 
     /// <summary>지금 도구가 플러그인에서 로그인 창을 띄울 수 있는지 (Claude·Codex CLI)</summary>
@@ -422,8 +435,8 @@ internal sealed partial class TranslationQueue : IDisposable
                 return;
             }
             var result = await translator.TranslateAsync(line.Message, TranslationDirection.JaToKo, ct);
-            target.Complete(TranslationState.Done, result.Text);
-            _sampleLog.Incoming(line.Channel, line.Message, translator.ShortName, done: true, result.Text);
+            target.Complete(TranslationState.Done, result.Text, result.Engine);
+            _sampleLog.Incoming(line.Channel, line.Message, result.Engine ?? translator.ShortName, done: true, result.Text);
         }
         catch (OperationCanceledException)
         {

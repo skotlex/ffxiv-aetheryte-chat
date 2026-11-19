@@ -65,6 +65,12 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public TranslationEngine? Engine { get; set; }
 
+    /// <summary>
+    /// 1순위(<see cref="Engine"/>)에 문제가 생기면 이어서 쓸 도구들 (2순위부터 순서대로). 비면 1순위만 쓴다.
+    /// 읽을 때는 <see cref="EngineChain"/> 로 1순위·겹친 것을 걸러 쓴다
+    /// </summary>
+    public List<TranslationEngine> FallbackEngines { get; set; } = [];
+
     public ClaudeSettings Claude { get; set; } = new();
     public CodexSettings Codex { get; set; } = new();
     public OllamaSettings Ollama { get; set; } = new();
@@ -98,6 +104,15 @@ public sealed class Configuration : IPluginConfiguration
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 
     public const int CurrentVersion = 1;
+
+    /// <summary>
+    /// 번역에 쓸 도구들을 우선순위대로: 1순위 다음에 예비 도구. 1순위를 고르지 않았으면 비어 있다.
+    /// 설정 파일을 손으로 고쳐 같은 도구가 여러 번 있거나 모르는 값이 있어도 한 번씩만 남긴다
+    /// </summary>
+    internal List<TranslationEngine> EngineChain() =>
+        Engine is not { } primary
+            ? []
+            : [primary, .. FallbackEngines.Where(e => e != primary && Enum.IsDefined(e)).Distinct()];
 
     /// <summary>번역에 쓸 용어집: 기본 용어(켜 두었으면) + 내 용어</summary>
     internal TermGlossary BuildGlossary() =>

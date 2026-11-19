@@ -26,7 +26,8 @@ internal enum TranslationState
 /// <param name="IsOwnText">내가 보낸 글이 돌아온 것 — 번역이 아니라 보낼 때 쓴 한국어 원문</param>
 internal sealed class LineTranslation(string engine, bool isOwnText = false)
 {
-    public string Engine { get; } = engine;
+    /// <summary>번역을 시작할 때는 1순위 도구, 끝나면 실제로 번역한 도구 (예비 도구로 넘어갔으면 그 도구)</summary>
+    public string Engine { get; private set; } = engine;
     public bool IsOwnText { get; } = isOwnText;
 
     private volatile TranslationState _state = TranslationState.Pending;
@@ -38,9 +39,12 @@ internal sealed class LineTranslation(string engine, bool isOwnText = false)
     /// <summary>'오역 제보' 를 했는지 (받은 채팅 창에서 한 번만 제보하게). UI 스레드만 쓴다</summary>
     public bool Reported { get; set; }
 
-    public void Complete(TranslationState state, string result)
+    /// <param name="engine">실제로 번역한 도구가 시작할 때의 이름표와 다르면 그 이름. null 이면 그대로 둔다</param>
+    public void Complete(TranslationState state, string result, string? engine = null)
     {
         Result = result;
+        if (engine is not null)
+            Engine = engine;
         _state = state;
     }
 }

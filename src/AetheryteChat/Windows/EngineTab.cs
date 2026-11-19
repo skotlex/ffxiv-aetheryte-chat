@@ -66,11 +66,14 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
     private Configuration Config => plugin.Configuration;
     private TranslationQueue Queue => plugin.TranslationQueue;
 
+    // 아래에 준비·설정을 보여 줄 도구. 우선순위에 든 도구 가운데 고른다 (없거나 빠졌으면 1순위)
+    private TranslationEngine? _editing;
+
     public void Draw()
     {
         var config = Config;
 
-        ImGui.TextUnformatted("번역 도구");
+        ImGui.TextUnformatted("번역 도구 (1순위)");
         var current = Engines.FirstOrDefault(e => e.Engine == config.Engine);
         ImGui.SetNextItemWidth(Layout.ComboWidth(Engines.Select(e => e.Name).Append(NotChosen)));
         using (var combo = ImRaii.Combo("##engine", current.Name ?? NotChosen))
@@ -80,13 +83,7 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
                 foreach (var (engine, name, description) in Engines)
                 {
                     if (ImGui.Selectable($"{name} — {description}", engine == config.Engine) && engine != config.Engine)
-                    {
-                        config.Engine = engine;
-                        config.Save();
-                        Queue.Reload();
-                        // 새 도구로 최근 대화를 다시 번역한다. 이전 번역은 남겨 두고 모델 이름으로 구분한다
-                        _ = Queue.RetranslateRecentAsync(plugin.ChatListener.Snapshot(), RetranslateCount);
-                    }
+                        SetPrimary(config, engine);
                 }
             }
         }
@@ -99,8 +96,33 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
         }
 
         ImGuiHelpers.ScaledDummy(8);
+        if (config.Engine is null)
+        {
+            DrawChooseGuide();
+            return;
+        }
 
-        switch (config.Engine)
+        DrawFallbacks(config);
+
+        var chain = config.EngineChain();
+        var editing = _editing is { } e && chain.Contains(e) ? e : chain[0];
+        _editing = editing;
+        ImGuiHelpers.ScaledDummy(8);
+        if (chain.Count > 1)
+        {
+            ImGui.TextUnformatted("준비·설정할 도구");
+            for (var i = 0; i < chain.Count; i++)
+            {
+                var label = $"{i + 1}. {EngineName(chain[i])}";
+                if (i > 0)
+                    Layout.SameLineIfFits(Layout.CheckboxWidth(label));
+                if (ImGui.RadioButton(label, editing == chain[i]))
+                    _editing = editing = chain[i];
+            }
+            ImGuiHelpers.ScaledDummy(4);
+        }
+
+        switch (editing)
         {
             case TranslationEngine.Claude:
                 DrawClaude(config.Claude);
@@ -114,16 +136,130 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
             case TranslationEngine.Papago:
                 DrawPapago();
                 break;
-            default:
-                DrawChooseGuide();
-                return;
         }
 
-        if (config.Engine != TranslationEngine.Papago)
+        // 용어집은 모든 LLM 도구가 같이 쓴다
+        if (chain.Any(c => c != TranslationEngine.Papago))
         {
             ImGuiHelpers.ScaledDummy(8);
             DrawGlossary(config);
         }
+    }
+
+    private static string EngineName(TranslationEngine engine) => Engines.First(e => e.Engine == engine).Name;
+
+    /// <summary>
+    /// 1순위를 바꾼다. 예비 도구였으면 이전 1순위와 자리를 바꾸고, 아니면 1순위만 바꾼다.
+    /// 새 도구로 최근 대화를 다시 번역한다 (이전 번역은 남겨 두고 모델 이름으로 구분한다)
+    /// </summary>
+    private void SetPrimary(Configuration config, TranslationEngine engine)
+    {
+        var chain = config.EngineChain();
+        var fallbacks = chain.Skip(1).ToList();
+        var at = fallbacks.IndexOf(engine);
+        if (at >= 0 && config.Engine is { } old)
+            fallbacks[at] = old;
+        config.Engine = engine;
+        config.FallbackEngines = fallbacks;
+        _editing = engine;
+        config.Save();
+        Queue.Reload();
+        _ = Queue.RetranslateRecentAsync(plugin.ChatListener.Snapshot(), RetranslateCount);
+    }
+
+    /// <summary>
+    /// 예비 도구: 1순위에 문제가 생기면 순서대로 이어서 쓸 도구들. 순서 바꾸기(2순위를 위로 올리면 1순위와 바뀐다)·빼기·더하기
+    /// </summary>
+    private void DrawFallbacks(Configuration config)
+    {
+        Heading("예비 도구");
+        HelpText("1순위 도구가 준비되지 않았거나 번역에 실패하면(로그인 풀림·시간 초과·연결 실패 등) 아래 순서대로 다음 도구로 번역합니다. " +
+                 $"실패한 도구는 {FallbackTranslator.FailureCooldown.TotalSeconds:0}초 동안 건너뛰고, 로그인이 풀린 도구는 다시 로그인할 때까지 건너뜁니다. " +
+                 "쓰는 도구마다 아래에서 준비·설정해 주세요.");
+
+        var chain = config.EngineChain();
+        var fallbacks = chain.Skip(1).ToList();
+        List<TranslationEngine>? changed = null;
+        TranslationEngine? promote = null;
+        for (var i = 0; i < fallbacks.Count; i++)
+        {
+            using var id = ImRaii.PushId($"fallback{i}");
+            if (ImGui.ArrowButton("up", ImGuiDir.Up))
+            {
+                if (i == 0)
+                    promote = fallbacks[0];
+                else
+                    changed = Swap(fallbacks, i, i - 1);
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip(i == 0 ? "1순위와 자리 바꾸기" : "위로");
+            ImGui.SameLine();
+            using (ImRaii.Disabled(i == fallbacks.Count - 1))
+            {
+                if (ImGui.ArrowButton("down", ImGuiDir.Down))
+                    changed = Swap(fallbacks, i, i + 1);
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("빼기"))
+                changed = [.. fallbacks.Where((_, j) => j != i)];
+            ImGui.SameLine();
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextUnformatted($"{i + 2}. {EngineName(fallbacks[i])}");
+            DrawMemberStatus(fallbacks[i]);
+        }
+
+        var remaining = Engines.Where(e => !chain.Contains(e.Engine)).ToList();
+        if (remaining.Count > 0)
+        {
+            const string addLabel = "예비 도구 더하기";
+            ImGui.SetNextItemWidth(Layout.ComboWidth([addLabel, .. remaining.Select(r => r.Name)]));
+            using var combo = ImRaii.Combo("##addFallback", addLabel);
+            if (combo.Success)
+            {
+                foreach (var (engine, name, description) in remaining)
+                {
+                    if (ImGui.Selectable($"{name} — {description}"))
+                        changed = [.. fallbacks, engine];
+                }
+            }
+        }
+
+        if (promote is { } p)
+        {
+            SetPrimary(config, p);
+        }
+        else if (changed is not null)
+        {
+            config.FallbackEngines = changed;
+            Apply();
+        }
+
+        static List<TranslationEngine> Swap(List<TranslationEngine> list, int a, int b)
+        {
+            var copy = list.ToList();
+            (copy[a], copy[b]) = (copy[b], copy[a]);
+            return copy;
+        }
+    }
+
+    /// <summary>예비 도구 한 줄의 상태 (같은 줄에 들어가면 옆에, 아니면 다음 줄에). 쓸 수 없는 이유는 글자에 마우스를 올리면 보인다</summary>
+    private void DrawMemberStatus(TranslationEngine engine)
+    {
+        var m = Queue.Member(engine);
+        var (text, color) = m?.Status switch
+        {
+            null or FallbackMemberStatus.Checking => ("확인 중…", DimColor),
+            FallbackMemberStatus.Ready when m.CoolingDown => ("실패해 잠시 건너뜀", ErrorColor),
+            FallbackMemberStatus.Ready => ("준비됨", DimColor),
+            FallbackMemberStatus.NotLoggedIn => (m.Translator.NotReadyHint, ErrorColor),
+            _ => ("사용 불가", ErrorColor),
+        };
+        if (Layout.SameLineIfFits(Layout.TextWidth(text)))
+            ImGui.TextColored(color, text);
+        else
+            WrappedText.Draw(text, color);
+        if (m?.Detail is { } detail && color == ErrorColor && ImGui.IsItemHovered())
+            ImGui.SetTooltip(detail);
     }
 
     public void Dispose()
@@ -187,7 +323,7 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
         HelpText($"Codex CLI {CodexCliTranslator.LightweightMinVersion.ToString(3)} 이상에서 쓰고, 이전 CLI면 자동으로 기존 방식으로 번역합니다. " +
                  "개인 Codex 설정(config.toml)을 읽지 않으며 로그인은 그대로 사용합니다. " +
                  "사용할 모델은 아래에 지정하세요. 개인 설정이 필요하면 경량 번역을 끄세요.");
-        if (s.Lightweight && Queue.Translator is CodexCliTranslator { LightweightOffReason: { } reason })
+        if (s.Lightweight && Queue.Member(TranslationEngine.Codex)?.Translator is CodexCliTranslator { LightweightOffReason: { } reason })
             WrappedText.Draw(reason, ErrorColor);
         DrawTextSetting("모델", "codexModel", "비우면 Codex 기본 모델", s.Model, v => s.Model = v, []);
         DrawChoice("생각 정도 (reasoning effort)", "codexEffort", s.ReasoningEffort, v => s.ReasoningEffort = v ?? "low",
@@ -201,7 +337,7 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
 
         ImGuiHelpers.ScaledDummy(6);
         // 연결하지 못했던 목록은 상태 줄을 눌러 다시 확인해 준비되면 다시 가져온다
-        if (_ollamaModels is { IsFaulted: true } && Queue.Status == EngineStatus.Ready)
+        if (_ollamaModels is { IsFaulted: true } && Queue.Member(TranslationEngine.Ollama)?.Status == FallbackMemberStatus.Ready)
             _ollamaModels = null;
         _ollamaModels ??= OllamaTranslator.ListModelsAsync(s.Endpoint);
 
