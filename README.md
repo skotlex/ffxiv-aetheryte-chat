@@ -122,14 +122,23 @@ dotnet run --project tools/TranslatorConsole -- ja2ko --engine codex --model gpt
 
 ## 용어집
 
-LLM 도구(Claude·Codex·Ollama)는 번역 도구 탭의 **용어집**을 번역 지시문에 넣어, 게임 용어를 유저들이 쓰는 말로 옮깁니다.
-한 줄에 `일본어 → 한국어` 하나씩 적습니다. 보낼 때(한→일)는 거꾸로 읽습니다.
+LLM 도구(Claude·Codex·Ollama)는 **용어집**으로 게임 용어를 한국 서버 유저들이 쓰는 말로 옮깁니다.
+번역할 때 **그 줄에 나온 용어만** 함께 보내므로, 용어가 많아도 번역마다 쓰는 토큰은 거의 늘지 않습니다.
+보낼 때(한→일)는 한국어 쪽으로 찾아 거꾸로 씁니다.
+
+용어집은 두 가지를 합쳐 씁니다 (번역 도구 탭 아래쪽).
+
+- **기본 용어**: 플러그인과 함께 배포되며, 업데이트하면 함께 늘어납니다. '기본 용어 쓰기'를 끄면 쓰지 않습니다.
+- **내 용어**: 직접 적는 용어. 한 줄에 `일본어 → 한국어` 하나씩 적고, 기본 용어와 일본어가 같으면 내 용어가 우선합니다.
 
 ```
 零式 → 영식
 絶 → 절
 初見 → 초행
 ```
+
+이전 버전에서 용어집을 고쳤다면, 기본 용어와 똑같은 줄은 빼고 고치거나 덧붙인 줄만 '내 용어'로 옮깁니다.
+용어집을 비워 두었다면 '기본 용어 쓰기'가 꺼진 채로 옮깁니다.
 
 ## 개인정보와 사용량
 
@@ -168,7 +177,11 @@ dotnet build -c Release
 dotnet run --project tools/TranslatorConsole -- auth --engine codex
 dotnet run --project tools/TranslatorConsole -- ja2ko "零式4層、初見です。よろしくお願いします！"
 dotnet run --project tools/TranslatorConsole -- ko2ja --engine ollama --model gemma3:12b
+dotnet run --project tools/TranslatorConsole -- match ja2ko "零式4層、初見です"        # 번역하지 않고 맞은 용어만
+dotnet run --project tools/TranslatorConsole -- ja2ko --glossary my-glossary.txt   # 기본 용어집 대신 이 파일 (--no-glossary: 없이)
 ```
+
+기본 용어집은 `src/AetheryteChat.Translation/default-glossary.txt` 입니다 (플러그인에 리소스로 들어갑니다).
 
 ### 배포
 
