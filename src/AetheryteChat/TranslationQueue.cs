@@ -185,7 +185,10 @@ internal sealed partial class TranslationQueue : IDisposable
         }
     }
 
-    /// <summary>준비된 뒤 밀린 줄을 번역한다. 자동 번역을 꺼 두었으면 그대로 둔다</summary>
+    /// <summary>
+    /// 준비된 뒤 밀린 줄을 번역한다. 자동 번역을 꺼 두었으면 그대로 둔다.
+    /// 기다리는 사이 번역을 끈 채널의 줄은 번역하지 않고 버린다 — 끈 채널의 대화가 번역 도구로 나가지 않게
+    /// </summary>
     private void FlushBacklog(ITranslator translator)
     {
         if (!AutoTranslate)
@@ -196,7 +199,7 @@ internal sealed partial class TranslationQueue : IDisposable
             lines = [.. _backlog];
             _backlog.Clear();
         }
-        foreach (var line in lines.Where(l => !l.HasTranslationFrom(translator.ShortName)))
+        foreach (var line in lines.Where(l => _isChannelEnabled(l.Channel) && !l.HasTranslationFrom(translator.ShortName)))
             Start(line, translator);
     }
 
@@ -319,6 +322,12 @@ internal sealed partial class TranslationQueue : IDisposable
                     Defer(line, target);
                     return;
                 }
+                // 기다리는 사이 이 채널의 번역을 껐으면 부르지 않는다. 이미 도구에 넘긴 줄은 그대로 끝낸다
+                if (!_isChannelEnabled(line.Channel))
+                {
+                    line.RemoveTranslation(target);
+                    return;
+                }
                 var result = await translator.TranslateAsync(line.Message, TranslationDirection.JaToKo, ct);
                 target.Complete(TranslationState.Done, result.Text);
             }
@@ -342,6 +351,12 @@ internal sealed partial class TranslationQueue : IDisposable
             target.Complete(TranslationState.Failed, e.Message);
             // 채팅 내용이 로그 파일에 남지 않게 원인 메시지는 창에만 보여 준다
             Plugin.Log.Warning("받은 채팅 번역 실패");
+        }
+        catch (Exception e)
+        {
+            // 예상하지 못한 실패도 '번역 중' 으로 남기지 않는다. 예외 메시지에 응답 내용이 섞일 수 있어 로그에는 종류만 남긴다
+            target.Complete(TranslationState.Failed, $"알 수 없는 오류 ({e.GetType().Name})");
+            Plugin.Log.Warning($"받은 채팅 번역 실패: 예상하지 못한 오류 {e.GetType().Name}");
         }
     }
 
