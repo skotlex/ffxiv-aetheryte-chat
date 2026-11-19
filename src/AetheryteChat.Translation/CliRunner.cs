@@ -6,7 +6,8 @@ namespace AetheryteChat.Translation;
 internal sealed record CliResult(int ExitCode, string StdOut, string StdErr, TimeSpan Elapsed);
 
 /// <summary>
-/// CLI 프로세스를 셸 없이 직접 실행한다. 입력은 stdin 으로 넘기고(DESIGN 4.4) 반드시 닫는다.
+/// CLI 프로세스를 셸 없이 직접 실행한다. 채팅 원문은 인자가 아니라 stdin 으로 넘기고 — 따옴표·줄바꿈이 든 글을
+/// 인자로 넘기면 조각날 수 있다 — stdin 은 넘길 것이 없어도 반드시 닫는다 (열어 두면 CLI 가 입력을 기다린다).
 /// </summary>
 internal static class CliRunner
 {

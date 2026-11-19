@@ -26,7 +26,7 @@ public static class CliLocation
 
     /// <summary>
     /// npm 이 PATH 에 두는 claude.cmd·codex.ps1 같은 래퍼. 셸(cmd.exe)을 거치면 여러 줄 지시문 같은 인자가 깨지므로
-    /// 실제 exe 만 실행한다 (DESIGN 4.4)
+    /// 실제 exe 만 실행한다
     /// </summary>
     public static bool IsScriptWrapper(string path) =>
         Path.GetExtension(path).ToLowerInvariant() is ".cmd" or ".bat" or ".ps1";

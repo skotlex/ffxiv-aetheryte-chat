@@ -2,7 +2,7 @@ namespace AetheryteChat.Translation;
 
 /// <summary>
 /// 번역 전용 시스템 프롬프트. 방향과 출력 형식을 반드시 적는다 —
-/// 적지 않으면 --effort low 에서 원문을 그대로 돌려준다 (DESIGN 4.2).
+/// 적지 않으면 --effort low 에서 원문을 그대로 돌려준다.
 /// </summary>
 public static class Prompts
 {

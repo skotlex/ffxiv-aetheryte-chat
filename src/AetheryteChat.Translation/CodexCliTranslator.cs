@@ -12,12 +12,12 @@ public sealed class CodexCliOptions : TranslatorOptions
 
     public string ReasoningEffort { get; set; } = "low";
 
-    /// <summary>Claude 보다 느리다 (실측 약 5.5초, DESIGN 4.3)</summary>
+    /// <summary>Claude 보다 느리다 (2026-11-18 실측 약 5.5초)</summary>
     public override TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(60);
 }
 
 /// <summary>
-/// 구독 계정으로 로그인한 Codex CLI 를 실행해 번역한다 (DESIGN 4.3).
+/// 구독 계정으로 로그인한 Codex CLI 를 실행해 번역한다.
 /// 시스템 프롬프트 옵션이 없어 번역 지시와 채팅 원문을 함께 stdin 으로 넘긴다.
 /// </summary>
 public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator

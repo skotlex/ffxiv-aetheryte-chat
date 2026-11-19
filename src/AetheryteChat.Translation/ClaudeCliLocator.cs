@@ -2,7 +2,8 @@ namespace AetheryteChat.Translation;
 
 /// <summary>
 /// claude.exe 를 찾는다. npm 으로 깔면 PATH 에는 claude.cmd 래퍼만 있으므로
-/// 래퍼가 가리키는 실제 exe 를 찾아 셸 없이 실행한다 (DESIGN 4.4).
+/// 래퍼가 가리키는 실제 exe 를 찾아 셸 없이 실행한다 — cmd 를 거치면 줄바꿈·따옴표가 든 인자(시스템 프롬프트)가
+/// cmd 따옴표 규칙에 걸려 깨진다.
 /// </summary>
 public static class ClaudeCliLocator
 {

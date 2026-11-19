@@ -4,7 +4,8 @@ namespace AetheryteChat.Translation;
 
 /// <summary>
 /// codex.exe 를 찾는다. npm 으로 깔면 PATH 에는 codex.cmd → node 로 도는 codex.js 만 있고, 실제 실행 파일은
-/// 플랫폼 패키지(@openai/codex-win32-x64 또는 -arm64) 안에 있다. node 를 거치지 않고 그 exe 를 셸 없이 직접 실행한다 (DESIGN 4.4).
+/// 플랫폼 패키지(@openai/codex-win32-x64 또는 -arm64) 안에 있다. node·cmd 를 거치지 않고 그 exe 를 셸 없이
+/// 직접 실행한다 (cmd 따옴표 규칙을 피한다).
 /// </summary>
 public static class CodexCliLocator
 {

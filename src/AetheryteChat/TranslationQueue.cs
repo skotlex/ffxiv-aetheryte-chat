@@ -14,7 +14,7 @@ internal enum EngineStatus
 
 /// <summary>
 /// 받은 채팅을 백그라운드에서 번역한다. 게임 스레드는 기다리지 않는다.
-/// 묶음 번역·캐시·예비 엔진은 다음 단계에서 붙인다 (DESIGN 4.5, 9절 6번).
+/// 아직 한 줄씩 번역한다 — 묶음 번역·같은 문장 캐시·실패했을 때의 예비 엔진은 붙이지 않았다.
 /// </summary>
 internal sealed partial class TranslationQueue : IDisposable
 {

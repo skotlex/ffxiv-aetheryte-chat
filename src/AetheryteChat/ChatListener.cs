@@ -71,7 +71,7 @@ internal sealed class ChatLine(DateTime time, XivChatType channel, string sender
 }
 
 /// <summary>
-/// 플레이어 대화 채널만 받아 최근 줄을 메모리에 둔다. 다른 플레이어의 대화이므로 파일에 남기지 않는다 (DESIGN 7절).
+/// 플레이어 대화 채널만 받아 최근 줄을 메모리에 둔다. 다른 플레이어의 대화이므로 파일에 남기지 않는다.
 /// </summary>
 internal sealed class ChatListener : IDisposable
 {

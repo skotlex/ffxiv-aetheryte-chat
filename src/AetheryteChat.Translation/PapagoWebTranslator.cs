@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace AetheryteChat.Translation;
 
 /// <summary>
-/// papago.naver.com 웹 화면이 쓰는 번역 주소를 직접 부른다 (DESIGN 6절 — TataruHelper 가 쓰는 방식을 참고해 새로 작성).
+/// papago.naver.com 웹 화면이 쓰는 번역 주소를 직접 부른다 (TataruHelper 가 쓰는 방식을 참고해 새로 작성).
 /// 공개 API 가 아니라서 네이버가 바꾸거나 막으면 동작하지 않는다. 로그인·키는 필요 없다.
 /// 프롬프트·용어집을 넣을 수 없어 게임 용어 번역은 LLM 보다 거칠다.
 /// </summary>

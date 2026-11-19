@@ -6,7 +6,7 @@ using Dalamud.Interface.ManagedFontAtlas;
 namespace AetheryteChat.Windows;
 
 /// <summary>
-/// 이 창에서 쓰는 폰트. 게임 폰트에는 한글이 없어 ImGui 창에서 따로 불러온다 (DESIGN 3절).
+/// 이 창에서 쓰는 폰트. 게임 폰트에는 한글이 없어 ImGui 창에서 따로 불러온다.
 /// 사용자가 고른 폰트(없으면 Dalamud 기본 폰트)에, 그 폰트에 없는 글자를 Windows 기본 한글·일본어 폰트로 채우고
 /// 채팅에 섞여 오는 게임 전용 기호(자동 번역 괄호·파티 모집 표시 등 U+E0xx)를 합친다.
 /// </summary>

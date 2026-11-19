@@ -7,7 +7,7 @@ namespace AetheryteChat.Translation;
 public sealed class OllamaOptions : TranslatorOptions
 {
     public string Endpoint { get; set; } = "http://127.0.0.1:11434";
-    /// <summary>2026-11-18 비교에서 한→일 게임 용어까지 맞은 gemma3:12b 가 기본 (DESIGN 6.2)</summary>
+    /// <summary>2026-11-18 qwen3:14b·translategemma:12b 와 비교해 한→일 게임 용어까지 맞은 gemma3:12b 가 기본</summary>
     public string Model { get; set; } = "gemma3:12b";
 
     /// <summary>번역 사이에 모델을 VRAM 에 올려 두는 시간. 짧으면 매번 다시 올리느라 느려진다</summary>
@@ -18,7 +18,7 @@ public sealed class OllamaOptions : TranslatorOptions
 }
 
 /// <summary>
-/// 내 PC 에서 도는 Ollama 로 번역한다. 무료·오프라인이고, LLM 이라 지시문·용어집을 넣을 수 있다 (DESIGN 6.1).
+/// 내 PC 에서 도는 Ollama 로 번역한다. 무료·오프라인이고, LLM 이라 지시문·용어집을 넣을 수 있다.
 /// 번역할 때만 GPU 를 쓰고, 그동안은 게임과 GPU 를 나눠 쓴다.
 /// </summary>
 public sealed class OllamaTranslator(OllamaOptions options) : ITranslator

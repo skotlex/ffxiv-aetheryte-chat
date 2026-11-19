@@ -6,7 +6,7 @@ namespace AetheryteChat;
 
 /// <summary>
 /// 게임 채팅으로 글을 보낸다. Dalamud 에는 보내기 API 가 없어, 채팅 입력창에서 Enter 를 누를 때와 같은
-/// <c>UIModule.ProcessChatBoxEntry</c> 를 부른다. 사용자가 버튼을 눌렀을 때만 쓴다 (DESIGN 5절).
+/// <c>UIModule.ProcessChatBoxEntry</c> 를 부른다. 사용자가 버튼을 눌렀을 때만 쓴다.
 /// </summary>
 internal static class ChatSender
 {

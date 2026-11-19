@@ -7,7 +7,7 @@ public sealed class ClaudeCliOptions : TranslatorOptions
     /// <summary>claude.exe 경로. null 이면 자동으로 찾는다.</summary>
     public string? ExecutablePath { get; set; }
 
-    /// <summary>반드시 지정한다. 비우면 기본 모델(Opus 등)로 돌아 무겁다 (DESIGN 4.2).</summary>
+    /// <summary>반드시 지정한다. 비우면 기본 모델(Opus 등)로 돌아 무겁다.</summary>
     public string Model { get; set; } = "haiku";
 
     /// <summary>low / medium / high. null 이면 넘기지 않는다.</summary>
@@ -17,7 +17,8 @@ public sealed class ClaudeCliOptions : TranslatorOptions
 }
 
 /// <summary>
-/// 구독 계정으로 로그인한 Claude Code CLI 를 실행해 번역한다. API 키·토큰 추출은 쓰지 않는다 (DESIGN 4.1).
+/// 구독 계정으로 로그인한 Claude Code CLI 를 실행해 번역한다. API 키를 받지 않고, 구독 로그인 토큰을 빼내 API 를
+/// 직접 부르지도 않는다 — Anthropic 이 허용하지 않는 방식이라 반드시 CLI 자체를 실행한다.
 /// </summary>
 public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
 {
