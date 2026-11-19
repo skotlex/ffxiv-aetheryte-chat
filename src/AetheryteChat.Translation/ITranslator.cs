@@ -17,7 +17,14 @@ public sealed record TranslationResult(
     string Text,
     TimeSpan Elapsed,
     long? InputTokens,
-    long? OutputTokens);
+    long? OutputTokens)
+{
+    /// <summary>
+    /// 실제로 번역한 도구의 ShortName. 여러 도구를 차례로 쓰는 <see cref="FallbackTranslator"/> 가 적는다.
+    /// null 이면 부른 번역기 자신이다
+    /// </summary>
+    public string? Engine { get; init; }
+}
 
 public interface ITranslator
 {

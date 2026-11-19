@@ -8,6 +8,7 @@
 //       --effort <low|medium|high> (claude: --effort, codex: reasoning effort), --exe <실행 파일 경로>,
 //       --endpoint <url> (ollama 주소, 기본 http://127.0.0.1:11434)
 //       --codex-standard (Codex 경량 모드를 끄고 기존 방식으로 비교)
+//       --engine claude,codex,ollama 처럼 쉼표로 여러 개 — 그 순서대로 쓰고, 앞의 도구가 실패하면 다음 도구로 번역한다
 //       --glossary <파일> (기본 용어집 대신 이 파일을 쓴다 — 용어집을 바꾸기 전/후 비교), --no-glossary (용어집 없이)
 //
 //   dotnet run --project tools/TranslatorConsole -- match ja2ko "零式4層、初見です"   (번역하지 않고 맞은 용어만)
@@ -133,41 +134,48 @@ if (positional[0] == "ollama")
     }
 }
 
-ITranslator translator;
-string? exePath;
-switch (engine)
+// --engine claude,codex 처럼 쉼표로 여러 개를 적으면 그 순서대로 쓴다 (앞의 도구가 실패하면 다음 도구로).
+// 여러 개일 때 --model·--effort·--exe 는 앞에 적은 도구에만 맞춰 넣지 않고 각 도구의 기본값을 쓴다
+var engineNames = engine.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+var single = engineNames.Length == 1;
+var created = new List<(string Name, ITranslator Translator, string? ExePath)>();
+foreach (var name in engineNames)
 {
-    case "claude":
-        var claude = new ClaudeCliOptions { ExecutablePath = exe, Effort = effort, Glossary = glossary };
-        if (model is not null)
-            claude.Model = model;
-        translator = new ClaudeCliTranslator(claude);
-        exePath = exe ?? ClaudeCliLocator.Find();
-        break;
-    case "codex":
-        var codex = new CodexCliOptions { ExecutablePath = exe, Model = model, Lightweight = codexLightweight, Glossary = glossary };
-        if (effort is not null)
-            codex.ReasoningEffort = effort;
-        translator = new CodexCliTranslator(codex);
-        exePath = exe ?? CodexCliLocator.Find();
-        break;
-    case "ollama":
-        var ollama = new OllamaOptions { Glossary = glossary };
-        if (model is not null)
-            ollama.Model = model;
-        if (endpoint is not null)
-            ollama.Endpoint = endpoint;
-        translator = new OllamaTranslator(ollama);
-        exePath = ollama.Endpoint;
-        break;
-    case "papago":
-        translator = new PapagoWebTranslator();
-        exePath = "(실행 파일 없음 — 웹 요청)";
-        break;
-    default:
-        Console.Error.WriteLine($"알 수 없는 엔진: {engine}");
-        return 2;
+    switch (name)
+    {
+        case "claude":
+            var claude = new ClaudeCliOptions { ExecutablePath = single ? exe : null, Effort = single ? effort : null, Glossary = glossary };
+            if (single && model is not null)
+                claude.Model = model;
+            created.Add((name, new ClaudeCliTranslator(claude), claude.ExecutablePath ?? ClaudeCliLocator.Find()));
+            break;
+        case "codex":
+            var codex = new CodexCliOptions
+            {
+                ExecutablePath = single ? exe : null, Model = single ? model : null, Lightweight = codexLightweight, Glossary = glossary,
+            };
+            if (single && effort is not null)
+                codex.ReasoningEffort = effort;
+            created.Add((name, new CodexCliTranslator(codex), codex.ExecutablePath ?? CodexCliLocator.Find()));
+            break;
+        case "ollama":
+            var ollama = new OllamaOptions { Glossary = glossary };
+            if (single && model is not null)
+                ollama.Model = model;
+            if (endpoint is not null)
+                ollama.Endpoint = endpoint;
+            created.Add((name, new OllamaTranslator(ollama), ollama.Endpoint));
+            break;
+        case "papago":
+            created.Add((name, new PapagoWebTranslator(), "(실행 파일 없음 — 웹 요청)"));
+            break;
+        default:
+            Console.Error.WriteLine($"알 수 없는 엔진: {name}");
+            return 2;
+    }
 }
+ITranslator translator = single ? created[0].Translator : new FallbackTranslator(created.Select(c => (c.Name, c.Translator)));
+var exePath = string.Join(", ", created.Select(c => c.ExePath ?? "(못 찾음)"));
 
 if (positional[0] == "samples")
     return await Samples.RunAsync(positional.Skip(1).ToList(), glossary, () => translator);
@@ -176,9 +184,15 @@ try
 {
     if (positional[0] == "auth")
     {
-        Console.WriteLine($"{translator.Name}: {exePath ?? "(못 찾음)"}");
+        Console.WriteLine($"{translator.Name}: {exePath}");
         Console.WriteLine($"로그인: {(await translator.IsLoggedInAsync() ? "됨" : "안 됨")}");
-        if (translator is CodexCliTranslator codexTranslator)
+        if (translator is FallbackTranslator chain)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1)); // 1순위가 먼저 준비되면 나머지 확인은 뒤에서 이어진다
+            foreach (var m in chain.Members)
+                Console.WriteLine($"  {m.Key}: {m.Status}{(m.Detail is { } d ? $" ({d})" : "")}");
+        }
+        foreach (var codexTranslator in created.Select(c => c.Translator).OfType<CodexCliTranslator>())
             Console.WriteLine($"경량 번역: {(!codexLightweight ? "끔" : codexTranslator.LightweightOffReason ?? "씀")}");
         return 0;
     }
@@ -209,6 +223,8 @@ try
         {
             var r = await translator.TranslateAsync(text, direction);
             Console.WriteLine($"{text}\n→ {r.Text}");
+            if (r.Engine is { } usedEngine)
+                Console.Error.WriteLine($"   번역한 도구: {usedEngine}");
             if (translator is not PapagoWebTranslator && glossary.Match(text, direction) is { Count: > 0 } terms)
                 Console.Error.WriteLine($"   용어: {Glossary.Format(terms, direction).Replace("\n", " / ")}");
             Console.Error.WriteLine($"   {r.Elapsed.TotalSeconds:0.0}초, 입력 {r.InputTokens?.ToString("N0") ?? "?"} / 출력 {r.OutputTokens?.ToString("N0") ?? "?"} 토큰");
