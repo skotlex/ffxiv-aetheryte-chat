@@ -120,8 +120,11 @@ internal static partial class Samples
 
     // ───────────────────────── terms ─────────────────────────
 
-    // 후보: 가타카나 2자 이상 (マケボ), 한자 2자 이상 (散開), 영문 대문자 약어 2~4자 (MT, LB). 비교 전에 NFKC 로 전각을 반각으로 맞춘다
-    [GeneratedRegex(@"[ァ-ヶ][ァ-ヶー]+|[一-龯々]{2,}|(?<![A-Za-z])[A-Z]{2,4}(?![A-Za-z])")]
+    // 후보: 가타카나 2자 이상 (マケボ), 한자 2자 이상 (散開), 영문 대문자 약어 2~4자 (MT, LB). 비교 전에 NFKC 로 전각을 반각으로 맞춘다.
+    // 한자 사이의 送り仮名 き·け·ち·え·し (受け取り·申し込み)와 끝의 り·み (頭割り·予習済み)는 한 말로 붙인다.
+    // り·み 는 대개 말의 끝이라 사이에는 두지 않는다 — 頭割り外す 가 한 말로 붙지 않게.
+    // 끝에 다른 가나는 붙이지 않는다 — 全滅した·散開ちゃう 의 し·ち 는 활용이라 붙이면 같은 말이 여러 후보로 갈린다
+    [GeneratedRegex(@"[ァ-ヶ][ァ-ヶー]+|[一-龯々]+(?:[きけちえし][一-龯々]+)*[りみ]?|(?<![A-Za-z])[A-Z]{2,4}(?![A-Za-z])")]
     private static partial Regex CandidatePattern();
 
     // 너무 흔해 용어집에 넣을 까닭이 없는 말. 완전하지 않다 — 나머지는 --min-count 와 사람이 거른다
@@ -206,7 +209,12 @@ internal static partial class Samples
         var normalized = text.Normalize(NormalizationForm.FormKC);
         foreach (var entry in glossary.Entries.OrderByDescending(e => e.Japanese.Length))
             normalized = normalized.Replace(entry.Japanese.Normalize(NormalizationForm.FormKC), "　", StringComparison.Ordinal);
-        return CandidatePattern().Matches(normalized).Select(m => m.Value).Where(t => !StopWords.Contains(t));
+        return CandidatePattern().Matches(normalized).Select(m => m.Value)
+            .Where(t => !IsKanjiStart(t) || t.Count(IsKanji) >= 2) // 한자 말은 한자가 2자 이상일 때만 (釣り·見え 등은 뺀다)
+            .Where(t => !StopWords.Contains(t));
+
+        static bool IsKanji(char c) => c is >= '一' and <= '龯' or '々';
+        static bool IsKanjiStart(string t) => IsKanji(t[0]);
     }
 
     private sealed record Disagreement(string Type, double Score, string Channel, string Text, string Detail);
