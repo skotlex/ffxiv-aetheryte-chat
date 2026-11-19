@@ -11,6 +11,11 @@
 //       --glossary <파일> (기본 용어집 대신 이 파일을 쓴다 — 용어집을 바꾸기 전/후 비교), --no-glossary (용어집 없이)
 //
 //   dotnet run --project tools/TranslatorConsole -- match ja2ko "零式4層、初見です"   (번역하지 않고 맞은 용어만)
+//
+// 표본 기록(게임 PC 의 SampleLogDirectory)으로 용어 후보 뽑기·평가 (Samples.cs):
+//   dotnet run --project tools/TranslatorConsole -- samples terms <표본 폴더>
+//   dotnet run --project tools/TranslatorConsole -- samples evalset <표본 폴더>
+//   dotnet run --project tools/TranslatorConsole -- samples eval <표본 폴더>/evalset.jsonl --engine codex --no-glossary
 
 using System.Text;
 using AetheryteChat.Translation;
@@ -47,6 +52,7 @@ if (positional.Count == 0)
     Console.Error.WriteLine("        TranslatorConsole match (ja2ko | ko2ja) [--glossary 파일] [문장]   (맞은 용어만)");
     Console.Error.WriteLine("        --codex-standard: Codex 경량 모드 끄기 (비교용)");
     Console.Error.WriteLine("        --glossary <파일>: 기본 용어집 대신 이 파일, --no-glossary: 용어집 없이");
+    Console.Error.WriteLine(Samples.Usage);
     return 2;
 }
 
@@ -162,6 +168,9 @@ switch (engine)
         Console.Error.WriteLine($"알 수 없는 엔진: {engine}");
         return 2;
 }
+
+if (positional[0] == "samples")
+    return await Samples.RunAsync(positional.Skip(1).ToList(), glossary, () => translator);
 
 try
 {
