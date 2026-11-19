@@ -183,10 +183,7 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
 
     private void DrawOllama(OllamaSettings s)
     {
-        Heading("준비");
-        HelpText("Ollama를 설치해 켜 두고 번역할 모델을 받아 두어야 합니다. 무료이고, 이 PC(또는 아래 주소의 PC)에서 번역하므로 " +
-                 "채팅이 인터넷으로 나가지 않습니다. 번역하는 동안 게임과 GPU를 나눠 씁니다.");
-        LinkButton("Ollama 내려받기 열기", OllamaDownloadUrl);
+        DrawOllamaSetup(s);
 
         ImGuiHelpers.ScaledDummy(6);
         // 연결하지 못했던 목록은 상태 줄을 눌러 다시 확인해 준비되면 다시 가져온다
@@ -402,6 +399,257 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
         ImGui.TextColored(DimColor, "GPU 메모리를 바로 비웁니다. 다음 번역 때 다시 올립니다");
     }
 
+    // ── Ollama 설치·실행 ─────────────────────────────────────────
+
+    // 최신 릴리스 (GitHub). 설치하지 않았거나 '업데이트 확인' 을 눌렀을 때만 가져온다
+    private Task<OllamaRelease>? _latestRelease;
+    private bool _updateCheckRequested;
+    private bool? _includeRocm;
+
+    // 서버 버전 (/api/version) — 켜져 있는지. 탭을 보는 동안 몇 초마다 다시 본다
+    private Task<string?>? _serverVersion;
+    private DateTime _serverVersionAt;
+    private (bool Known, string? Version) _lastServerVersion;
+
+    private Task? _ollamaHousekeeping; // 지우기·앱 닫기 (뒤에서)
+    private string? _ollamaSetupError;
+
+    /// <summary>
+    /// Ollama 가 설치·실행 중인지와 그에 맞는 할 일: 설치(플러그인이 공식 zip 으로), 업데이트·지우기, 공식 앱의 시작프로그램 끄기
+    /// </summary>
+    private void DrawOllamaSetup(OllamaSettings s)
+    {
+        Heading("준비");
+        HelpText("무료이고, 이 PC(또는 아래 주소의 PC)에서 번역하므로 채팅이 인터넷으로 나가지 않습니다. 번역하는 동안 게임과 GPU를 나눠 씁니다.");
+
+        if (!OllamaModels.IsLocal(s.Endpoint))
+        {
+            HelpText("다른 PC의 Ollama를 씁니다 — 그 PC에서 Ollama를 켜 두세요.");
+            return;
+        }
+
+        var host = plugin.OllamaHost;
+        using var indent = ImRaii.PushIndent();
+
+        if (host.IsInstalling)
+        {
+            DrawOllamaInstallProgress(host);
+            return;
+        }
+        if (host.InstallError is { } installError)
+            WrappedText.Draw(installError, ErrorColor);
+        if (_ollamaSetupError is { } setupError)
+            WrappedText.Draw(setupError, ErrorColor);
+
+        PollServerVersion(s.Endpoint);
+        var (known, version) = _lastServerVersion;
+        if (known && version is not null)
+        {
+            HelpText(host.OwnsRunningServer
+                ? $"Ollama {version} 실행 중 — 플러그인이 창 없이 켰고, 게임을 끄면 같이 꺼집니다."
+                : $"Ollama {version} 실행 중 — 다른 프로그램(Ollama 앱 등)이 켠 것을 그대로 씁니다.");
+        }
+        else if (host.IsAnyInstalled)
+        {
+            HelpText("Ollama가 꺼져 있습니다 — 번역할 때 플러그인이 창 없이 켭니다.");
+        }
+        else if (known)
+        {
+            WrappedText.Draw("Ollama가 설치되어 있지 않습니다.", ErrorColor);
+            DrawOllamaInstallOffer(host, currentVersion: null);
+            ImGuiHelpers.ScaledDummy(2);
+            HelpText("공식 설치 프로그램으로 설치해도 됩니다. 그때는 설치 직후 Ollama 앱의 환영 화면이 뜨는데, 닫아도 번역에는 상관없습니다.");
+            LinkButton("Ollama 공식 사이트 열기", OllamaDownloadUrl);
+            return;
+        }
+
+        if (host.IsManagedInstalled)
+            DrawManagedOllama(host);
+        if (OllamaServer.IsOfficialInstalled)
+            DrawOfficialOllamaStartup(host);
+    }
+
+    private void PollServerVersion(string endpoint)
+    {
+        if (_serverVersion is { IsCompleted: true } done)
+        {
+            if (done.IsCompletedSuccessfully)
+                _lastServerVersion = (true, done.Result);
+            if ((DateTime.UtcNow - _serverVersionAt).TotalSeconds >= LoadedRefreshSeconds)
+                _serverVersion = null;
+        }
+        if (_serverVersion is null)
+        {
+            _serverVersion = OllamaServer.GetVersionAsync(endpoint);
+            _serverVersionAt = DateTime.UtcNow;
+        }
+    }
+
+    /// <summary>설치 또는 업데이트 제안: 받을 크기·디스크 여유, AMD 구성 요소, 버튼</summary>
+    private void DrawOllamaInstallOffer(OllamaHost host, string? currentVersion)
+    {
+        _latestRelease ??= OllamaInstaller.GetLatestAsync();
+        if (!_latestRelease.IsCompleted)
+        {
+            HelpText("최신 버전 확인 중…");
+            return;
+        }
+        if (_latestRelease.IsFaulted)
+        {
+            WrappedText.Draw(_latestRelease.Exception?.InnerException?.Message ?? "최신 버전을 확인하지 못했습니다.", ErrorColor);
+            if (ImGui.Button("다시 시도##release"))
+                _latestRelease = null;
+            return;
+        }
+
+        var release = _latestRelease.Result;
+        if (currentVersion is not null && release.Tag == currentVersion)
+        {
+            HelpText("최신 버전입니다.");
+            return;
+        }
+        if (release.Find(OllamaInstaller.MainAssetName) is not { } main)
+        {
+            WrappedText.Draw($"{release.Tag} 에 이 PC용 파일이 없습니다.", ErrorColor);
+            return;
+        }
+
+        var rocm = release.Find(OllamaInstaller.RocmAssetName);
+        _includeRocm ??= rocm is not null && OllamaInstaller.HasAmdGpu();
+        var includeRocm = _includeRocm.Value && rocm is not null;
+        var size = main.Size + (includeRocm ? rocm!.Size : 0);
+        // 받은 zip 과 푼 파일이 잠깐 같이 있다 (풀면 zip 의 2배 남짓)
+        var need = size * 3;
+        var free = FreeBytes(host.InstallRoot);
+        HelpText($"{release.Tag} · 받을 크기 약 {OllamaModels.FormatSize(size)}" +
+                 (free is { } f ? $" · 디스크 여유 {OllamaModels.FormatSize(f)}" : ""));
+
+        if (rocm is not null)
+        {
+            var rocmChecked = _includeRocm.Value;
+            if (ImGui.Checkbox($"AMD 그래픽카드용 구성 요소도 받기 (+{OllamaModels.FormatSize(rocm.Size)})", ref rocmChecked))
+                _includeRocm = rocmChecked;
+        }
+
+        var lowDisk = free is { } have && have < need;
+        if (lowDisk)
+            WrappedText.Draw($"디스크 여유가 모자랍니다 — 약 {OllamaModels.FormatSize(need)}가 필요합니다.", ErrorColor);
+
+        using (ImRaii.Disabled(lowDisk))
+        {
+            if (ImGui.Button(currentVersion is null ? "Ollama 설치##install" : $"{release.Tag}(으)로 업데이트##install"))
+            {
+                _ollamaSetupError = null;
+                host.StartInstall(release, includeRocm, onDone: Recheck);
+            }
+        }
+        HelpText("Ollama 공식 GitHub에서 받아 검증(SHA-256)한 뒤 플러그인 폴더에 둡니다. 설치 프로그램·환영 화면·작업 표시줄 아이콘 없이, " +
+                 "번역할 때만 창 없이 켜고 게임을 끄면 같이 끕니다.");
+    }
+
+    private static void DrawOllamaInstallProgress(OllamaHost host)
+    {
+        var p = host.InstallProgress;
+        HelpText("Ollama 설치 중");
+        var label = p is null ? "준비 중…" : p.Fraction is { } fraction ? $"{p.Stage}  {fraction:P0}" : p.Stage;
+        ImGui.ProgressBar((float)(p?.Fraction ?? 0), new Vector2(Layout.FitWidth(InputWidth), 0), label);
+        if (ImGui.Button("취소##install"))
+            host.CancelInstall();
+        Layout.SameLineIfFits(Layout.TextWidth("취소해도 받은 부분은 남아, 다시 설치하면 이어서 받습니다"));
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextColored(DimColor, "취소해도 받은 부분은 남아, 다시 설치하면 이어서 받습니다");
+    }
+
+    /// <summary>플러그인이 설치한 Ollama: 버전, 업데이트 확인, 지우기</summary>
+    private void DrawManagedOllama(OllamaHost host)
+    {
+        var version = host.ManagedVersion ?? "(버전 모름)";
+        HelpText($"플러그인이 설치한 Ollama {version}");
+
+        if (_updateCheckRequested)
+        {
+            DrawOllamaInstallOffer(host, version);
+        }
+        else if (ImGui.Button("업데이트 확인##ollama"))
+        {
+            _updateCheckRequested = true;
+            _latestRelease = null; // 새로 가져온다
+        }
+
+        Layout.SameLineIfFits(Layout.ButtonWidth("지우기##ollama"));
+        using (ImRaii.Disabled(_ollamaHousekeeping is { IsCompleted: false }))
+        {
+            if (ImGui.Button("지우기##ollama"))
+            {
+                _ollamaSetupError = null;
+                _ollamaHousekeeping = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await host.UninstallAsync();
+                    }
+                    catch (TranslationException e)
+                    {
+                        _ollamaSetupError = e.Message;
+                    }
+                    await Plugin.Framework.RunOnFrameworkThread(Recheck);
+                });
+            }
+        }
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("플러그인이 설치한 Ollama를 지웁니다. 받아 둔 모델은 남습니다");
+    }
+
+    /// <summary>공식 설치 프로그램으로 깐 Ollama 앱: Windows 를 켤 때 앱도 켤지 (끄면 지금 켜진 앱도 닫는다)</summary>
+    private void DrawOfficialOllamaStartup(OllamaHost host)
+    {
+        var enabled = OllamaStartup.IsEnabled;
+        if (!enabled && !OllamaStartup.CanEnable(host.StartupBackupDir))
+            return; // 원래 시작프로그램에 없었다 — 바꿀 것이 없다
+
+        using (ImRaii.Disabled(_ollamaHousekeeping is { IsCompleted: false }))
+        {
+            if (ImGui.Checkbox("Windows를 켤 때 Ollama 앱도 켜기", ref enabled))
+            {
+                _ollamaSetupError = null;
+                var turnOn = enabled;
+                _ollamaHousekeeping = Task.Run(async () =>
+                {
+                    try
+                    {
+                        if (turnOn)
+                        {
+                            OllamaStartup.Enable(host.StartupBackupDir);
+                            return;
+                        }
+                        OllamaStartup.Disable(host.StartupBackupDir);
+                        OllamaStartup.CloseApp(); // 지금 켜진 앱(작업 표시줄 아이콘)도 닫는다 — 이제 플러그인이 창 없이 켠다
+                    }
+                    catch (TranslationException e)
+                    {
+                        _ollamaSetupError = e.Message;
+                    }
+                    await Plugin.Framework.RunOnFrameworkThread(Recheck);
+                });
+            }
+        }
+        HelpText("Ollama 공식 설치 프로그램이 켜 둔 설정입니다. 끄면 Windows를 켤 때 Ollama 앱(작업 표시줄 아이콘)이 뜨지 않고, " +
+                 "지금 켜져 있는 앱도 닫습니다. 그 뒤에는 번역할 때 플러그인이 창 없이 켜고, 게임을 끄면 같이 끕니다.");
+    }
+
+    private static long? FreeBytes(string path)
+    {
+        try
+        {
+            var root = Path.GetPathRoot(Path.GetFullPath(path));
+            return root is null ? null : new DriveInfo(root).AvailableFreeSpace;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
     private void ResetLoaded()
     {
         _loaded = null;
@@ -568,6 +816,9 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
         _ollamaModels = null;
         _downloadSizes.Clear();
         ResetLoaded();
+        _serverVersion = null;
+        _lastServerVersion = default;
+        _updateCheckRequested = false;
         Queue.Reload();
     }
 

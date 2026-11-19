@@ -19,6 +19,11 @@ public sealed class OllamaOptions : TranslatorOptions
     /// </summary>
     public bool Preload { get; set; } = true;
 
+    /// <summary>
+    /// 상태를 확인하기 전에 부른다 — 이 PC 의 Ollama 가 꺼져 있으면 플러그인이 창 없이 켠다. null 이면 켜져 있다고 본다
+    /// </summary>
+    public Func<CancellationToken, Task>? EnsureServerAsync { get; set; }
+
     /// <summary>처음 부를 때 모델을 VRAM 에 올리는 시간까지 포함한다</summary>
     public override TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(60);
 }
@@ -43,6 +48,9 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
     /// <summary>로그인 대신 Ollama 가 떠 있고 모델을 받아 두었는지 본다. 모델은 부르지 않는다.</summary>
     public async Task<bool> IsLoggedInAsync(CancellationToken ct = default)
     {
+        if (options.EnsureServerAsync is { } ensureServer)
+            await ensureServer(ct);
+
         var models = await ListModelsAsync(options.Endpoint, ct);
         var installed = models.Any(m => SameModel(m, options.Model));
 

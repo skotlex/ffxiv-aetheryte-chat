@@ -26,6 +26,9 @@ public sealed class Plugin : IDalamudPlugin
     internal ChatListener ChatListener { get; }
     internal TranslationQueue TranslationQueue { get; }
 
+    /// <summary>이 PC 의 Ollama 켜고 끄기·설치</summary>
+    internal OllamaHost OllamaHost { get; }
+
     /// <summary>이 플러그인 창들의 폰트 (설정에서 고른 폰트 + 한글·일본어·게임 기호 보충)</summary>
     internal WindowFont WindowFont { get; }
 
@@ -44,6 +47,7 @@ public sealed class Plugin : IDalamudPlugin
 
         WindowFont = new WindowFont(PluginInterface.UiBuilder.FontAtlas, Configuration.WindowFont);
 
+        OllamaHost = new OllamaHost(PluginInterface.GetPluginConfigDirectory());
         TranslationQueue = new TranslationQueue(CreateTranslator, channel => TranslateChannels.IsEnabled(Configuration, channel));
         ChatListener = new ChatListener(ChatGui, TranslationQueue.Enqueue);
         SendPanel = new SendPanel(this);
@@ -75,14 +79,47 @@ public sealed class Plugin : IDalamudPlugin
     private ITranslator CreateTranslator()
     {
         var glossary = Configuration.Glossary ?? Prompts.DefaultGlossary;
+
+        // Ollama 를 이 PC 에서 쓰지 않게 되면 플러그인이 켠 서버는 끈다 (메모리를 돌려준다)
+        var usesLocalOllama = Configuration.Engine == TranslationEngine.Ollama && OllamaModels.IsLocal(Configuration.Ollama.Endpoint);
+        if (!usesLocalOllama)
+            OllamaHost.StopServerInBackground();
+
         return Configuration.Engine switch
         {
             TranslationEngine.Claude => new ClaudeCliTranslator(Configuration.Claude.ToOptions(glossary)),
             TranslationEngine.Codex => new CodexCliTranslator(Configuration.Codex.ToOptions(glossary)),
-            TranslationEngine.Ollama => new OllamaTranslator(Configuration.Ollama.ToOptions(glossary)),
+            TranslationEngine.Ollama => CreateOllamaTranslator(glossary),
             TranslationEngine.Papago => new PapagoWebTranslator(),
             _ => new NoEngineTranslator(),
         };
+    }
+
+    private OllamaTranslator CreateOllamaTranslator(string glossary)
+    {
+        var options = Configuration.Ollama.ToOptions(glossary);
+        // 꺼져 있으면 창 없이 켠다 (Ollama 앱의 환영 화면·작업 표시줄 아이콘 없이)
+        options.EnsureServerAsync = ct => OllamaHost.EnsureServerAsync(options.Endpoint, ct);
+        return new OllamaTranslator(options);
+    }
+
+    /// <summary>
+    /// 게임·플러그인을 끌 때 Ollama 모델을 메모리에서 내린다. 플러그인이 켠 서버는 곧 끄므로 상관없지만,
+    /// 사용자가 켜 둔 Ollama 앱의 서버는 계속 돌기 때문에 모델만이라도 내려 GPU 메모리를 돌려준다 (기다리는 것은 최대 2초)
+    /// </summary>
+    private void UnloadOllamaModel()
+    {
+        if (Configuration.Engine != TranslationEngine.Ollama || OllamaHost.OwnsRunningServer)
+            return;
+        var settings = Configuration.Ollama.ToOptions("");
+        try
+        {
+            OllamaModels.UnloadAsync(settings.Endpoint, settings.Model).Wait(TimeSpan.FromSeconds(2));
+        }
+        catch (AggregateException)
+        {
+            // Ollama 가 이미 꺼졌다
+        }
     }
 
     public void Dispose()
@@ -96,6 +133,8 @@ public sealed class Plugin : IDalamudPlugin
         _mainWindow.Dispose();
         ChatListener.Dispose();
         TranslationQueue.Dispose();
+        UnloadOllamaModel();
+        OllamaHost.Dispose();
         WindowFont.Dispose();
     }
 }
