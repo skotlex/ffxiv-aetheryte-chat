@@ -18,13 +18,22 @@ internal enum EngineStatus
 /// </summary>
 internal sealed partial class TranslationQueue : IDisposable
 {
-    // 붐비는 채널에서 CLI 프로세스가 한꺼번에 뜨지 않게 동시 실행 수를 묶는다
+    // 붐비는 채널에서 CLI 프로세스가 한꺼번에 뜨지 않게 번역하는 작업자 수를 묶는다
     private const int MaxConcurrent = 2;
 
-    // 설정 탭에서 엔진을 바꾸면 갈아 끼운다. 이미 시작한 번역은 시작할 때의 엔진으로 끝난다
+    // 번역을 기다리는 줄. 채팅이 번역보다 빨리 들어오면(림사의 외치기 등) 한없이 밀려 몇 분 전 대화를 번역하게 되므로
+    // 길이와 기다리는 시간을 묶고, 넘치면 주변 채널(말하기·떠들기·외치기·초보자)의 오래된 줄부터 건너뛴다.
+    // 꺼낼 때도 대화 채널(파티·귓속말 등)을 먼저 꺼낸다 — 실제로 주고받는 대화가 늦지 않게
+    public const int MaxWaiting = 8;
+    private static readonly TimeSpan MaxWait = TimeSpan.FromSeconds(30);
+    private readonly List<Job> _waiting = [];
+    private readonly SemaphoreSlim _jobAdded = new(0);
+
+    private sealed record Job(ChatLine Line, LineTranslation Target, ITranslator Translator, DateTime Queued, bool IsAmbient);
+
+    // 설정 탭에서 엔진을 바꾸면 갈아 끼운다. 이미 대기열에 넣은 번역은 넣을 때의 엔진으로 끝난다
     private volatile ITranslator _translator;
     private int _loginCheckId; // 엔진을 바꾼 뒤 늦게 끝난 이전 엔진의 로그인 확인 결과를 버리는 데 쓴다
-    private readonly SemaphoreSlim _slots = new(MaxConcurrent);
     private readonly CancellationTokenSource _cts = new();
 
     // 보낸 글은 보통 1초 안에 받은 채팅으로 돌아온다. 돌아오지 않은 기록(서버가 받지 않음 등)이 한참 뒤
@@ -44,7 +53,7 @@ internal sealed partial class TranslationQueue : IDisposable
 
     // 준비가 안 됐을 때(로그인 전·로그인이 풀림·확인 중·Ollama 꺼짐) 들어와 번역하지 못한 최근 줄.
     // 준비되면 이어서 번역한다 — 로그인한 뒤 그 전에 받은 대화가 번역 없이 남지 않게
-    private const int MaxBacklog = 10;
+    private const int MaxBacklog = MaxWaiting; // 준비되면 한꺼번에 대기열에 넣으므로, 넣자마자 건너뛰는 줄이 없게 맞춘다
     private readonly List<ChatLine> _backlog = [];
 
     public TranslationQueue(Func<ITranslator> createTranslator, Func<XivChatType, bool> isChannelEnabled)
@@ -53,6 +62,8 @@ internal sealed partial class TranslationQueue : IDisposable
         _translator = createTranslator();
         _isChannelEnabled = isChannelEnabled;
         _loginCheck = CheckLoginAsync(_translator, ++_loginCheckId);
+        for (var i = 0; i < MaxConcurrent; i++)
+            _ = Task.Run(() => WorkAsync(_cts.Token));
     }
 
     public EngineStatus Status { get; private set; } = EngineStatus.Checking;
@@ -173,9 +184,65 @@ internal sealed partial class TranslationQueue : IDisposable
             Start(line, translator);
     }
 
-    /// <summary>번역을 시작할 때의 도구로 이름표를 붙이고 번역한다 — 이름표와 실제로 번역한 도구가 어긋나지 않게</summary>
-    private void Start(ChatLine line, ITranslator translator) =>
-        _ = TranslateAsync(line, line.AddTranslation(translator.ShortName), translator, _cts.Token);
+    /// <summary>
+    /// 대기열에 넣을 때의 도구로 이름표를 붙이고 대기열에 넣는다 — 이름표와 실제로 번역한 도구가 어긋나지 않게.
+    /// 대기열이 넘치면 한 줄을 건너뛴다 (주변 채널의 가장 오래된 줄, 없으면 가장 오래된 줄)
+    /// </summary>
+    private void Start(ChatLine line, ITranslator translator)
+    {
+        var job = new Job(line, line.AddTranslation(translator.ShortName), translator, DateTime.UtcNow,
+            TranslateChannels.IsAmbient(line.Channel));
+        lock (_waiting)
+        {
+            _waiting.Add(job);
+            if (_waiting.Count > MaxWaiting)
+            {
+                var skipped = _waiting.Find(j => j.IsAmbient) ?? _waiting[0];
+                _waiting.Remove(skipped);
+                Skip(skipped);
+            }
+        }
+        _jobAdded.Release();
+    }
+
+    /// <summary>다음에 번역할 줄. 너무 오래 기다린 줄은 건너뛰고, 대화 채널을 주변 채널보다 먼저 꺼낸다</summary>
+    private Job? TakeNext()
+    {
+        var expired = DateTime.UtcNow - MaxWait;
+        lock (_waiting)
+        {
+            foreach (var old in _waiting.Where(j => j.Queued < expired))
+                Skip(old);
+            _waiting.RemoveAll(j => j.Queued < expired);
+
+            var next = _waiting.Find(j => !j.IsAmbient) ?? _waiting.FirstOrDefault();
+            if (next is not null)
+                _waiting.Remove(next);
+            return next;
+        }
+    }
+
+    private static void Skip(Job job) => job.Target.Complete(TranslationState.Skipped, "채팅이 많아 건너뜀");
+
+    /// <summary>
+    /// 대기열에서 하나씩 꺼내 번역한다. 줄을 건너뛰면 깨우는 신호가 줄보다 많이 남는데, 그때는 빈손으로 다시 기다린다
+    /// </summary>
+    private async Task WorkAsync(CancellationToken ct)
+    {
+        while (true)
+        {
+            try
+            {
+                await _jobAdded.WaitAsync(ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return; // 플러그인을 내릴 때
+            }
+            if (TakeNext() is { } job)
+                await TranslateAsync(job.Line, job.Target, job.Translator, ct);
+        }
+    }
 
     private void AddBacklog(ChatLine line)
     {
@@ -335,28 +402,20 @@ internal sealed partial class TranslationQueue : IDisposable
     {
         try
         {
-            await _slots.WaitAsync(ct);
-            try
+            // 기다리는 사이 로그인이 풀린 것을 알았으면 CLI 를 부르지 않고 미뤄 둔다 (Codex 는 실패하는 데만 25초쯤 걸린다)
+            if (translator == _translator && Status != EngineStatus.Ready)
             {
-                // 기다리는 사이 로그인이 풀린 것을 알았으면 CLI 를 부르지 않고 미뤄 둔다 (Codex 는 실패하는 데만 25초쯤 걸린다)
-                if (translator == _translator && Status != EngineStatus.Ready)
-                {
-                    Defer(line, target);
-                    return;
-                }
-                // 기다리는 사이 이 채널의 번역을 껐으면 부르지 않는다. 이미 도구에 넘긴 줄은 그대로 끝낸다
-                if (!_isChannelEnabled(line.Channel))
-                {
-                    line.RemoveTranslation(target);
-                    return;
-                }
-                var result = await translator.TranslateAsync(line.Message, TranslationDirection.JaToKo, ct);
-                target.Complete(TranslationState.Done, result.Text);
+                Defer(line, target);
+                return;
             }
-            finally
+            // 기다리는 사이 이 채널의 번역을 껐으면 부르지 않는다. 이미 도구에 넘긴 줄은 그대로 끝낸다
+            if (!_isChannelEnabled(line.Channel))
             {
-                _slots.Release();
+                line.RemoveTranslation(target);
+                return;
             }
+            var result = await translator.TranslateAsync(line.Message, TranslationDirection.JaToKo, ct);
+            target.Complete(TranslationState.Done, result.Text);
         }
         catch (OperationCanceledException)
         {

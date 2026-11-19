@@ -13,6 +13,9 @@ internal enum TranslationState
     Pending,
     Done,
     Failed,
+
+    /// <summary>채팅이 번역보다 빨리 들어와 대기열에서 밀려 번역하지 않음</summary>
+    Skipped,
 }
 
 /// <summary>
@@ -57,9 +60,9 @@ internal sealed class ChatLine(DateTime time, XivChatType channel, string sender
     /// <summary>내가 보낸 글이 돌아온 줄인지 (다시 번역하지 않는다)</summary>
     public bool IsOwnText => Translations.Any(t => t.IsOwnText);
 
-    /// <summary>이 모델로 이미 번역했거나 번역 중인지 (실패한 것은 빼고)</summary>
+    /// <summary>이 모델로 이미 번역했거나 번역 중인지 (실패했거나 건너뛴 것은 빼고)</summary>
     public bool HasTranslationFrom(string engine) =>
-        Translations.Any(t => t.Engine == engine && t.State != TranslationState.Failed);
+        Translations.Any(t => t.Engine == engine && t.State is not (TranslationState.Failed or TranslationState.Skipped));
 
     public LineTranslation AddTranslation(string engine, bool isOwnText = false)
     {

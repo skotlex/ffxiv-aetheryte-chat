@@ -135,6 +135,9 @@ internal sealed class MainWindow : StyledWindow, IDisposable
                     case TranslationState.Failed:
                         WrappedText.Draw($"[{t.Engine}] 번역 실패: {t.Result}", ErrorColor);
                         break;
+                    case TranslationState.Skipped:
+                        WrappedText.Draw($"[{t.Engine}] {t.Result}", DimColor);
+                        break;
                 }
             }
         }

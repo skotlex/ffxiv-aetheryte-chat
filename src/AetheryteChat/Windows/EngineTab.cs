@@ -14,8 +14,8 @@ namespace AetheryteChat.Windows;
 /// </summary>
 internal sealed class EngineTab(Plugin plugin) : IDisposable
 {
-    /// <summary>번역 도구를 바꿀 때 새 도구로 다시 번역할 최근 대화 수</summary>
-    private const int RetranslateCount = 10;
+    /// <summary>번역 도구를 바꿀 때 새 도구로 다시 번역할 최근 대화 수 — 대기열 길이에 맞춰, 넣자마자 건너뛰는 줄이 없게 한다</summary>
+    private const int RetranslateCount = TranslationQueue.MaxWaiting;
 
     private const string NotChosen = "골라 주세요";
 

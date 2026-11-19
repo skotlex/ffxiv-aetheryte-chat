@@ -52,6 +52,13 @@ internal static class TranslateChannels
     private static readonly Dictionary<XivChatType, TranslateChannelGroup> GroupOf =
         Groups.SelectMany(g => g.Types.Select(t => (t, g.Group))).ToDictionary(x => x.t, x => x.Group);
 
+    /// <summary>
+    /// 주변 채널 — 근처·서버의 모르는 사람이 쓰는 채널. 번역이 밀리면 이 채널의 줄부터 건너뛰고,
+    /// 파티·귓속말처럼 실제로 주고받는 대화 채널을 먼저 번역한다
+    /// </summary>
+    public static bool IsAmbient(XivChatType channel) =>
+        channel is XivChatType.Say or XivChatType.Yell or XivChatType.Shout or XivChatType.NoviceNetwork;
+
     /// <summary>이 채널의 대화를 번역할지. 묶음에 없는 채널은 번역하지 않는다</summary>
     public static bool IsEnabled(Configuration config, XivChatType channel) =>
         GroupOf.TryGetValue(channel, out var group) && !config.DisabledTranslateChannels.Contains(group);
