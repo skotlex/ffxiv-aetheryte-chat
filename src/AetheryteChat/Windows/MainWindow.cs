@@ -1,5 +1,6 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game.ClientState.Keys;
 using Dalamud.Interface;
 using Dalamud.Interface.ImGuiFontChooserDialog;
 using Dalamud.Interface.Utility;
@@ -55,7 +56,9 @@ internal sealed class MainWindow : StyledWindow, IDisposable
 
         var sendBelow = Owner.Configuration.SendPanelPlacement == SendPanelPlacement.BelowChat;
         // 보이는 이름은 바뀌어도 탭 ID(### 뒤)는 같게 해 보내기 위치를 바꿔도 탭 선택이 풀리지 않게 한다
-        using (var tab = ImRaii.TabItem(sendBelow ? "채팅###chat" : "받은 채팅###chat"))
+        // 단축키로 입력칸에 가려는데 보내기가 채팅 탭에 붙어 있으면 채팅 탭을 연다 (다른 탭을 보고 있었어도)
+        var chatTabFlags = sendBelow && Owner.SendPanel.FocusPending ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
+        using (var tab = ImRaii.TabItem(sendBelow ? "채팅###chat" : "받은 채팅###chat", chatTabFlags))
         {
             if (tab.Success)
                 DrawChat(sendBelow);
@@ -218,11 +221,82 @@ internal sealed class MainWindow : StyledWindow, IDisposable
         }
     }
 
+    private static string ModifierLabel(VirtualKey key) => key switch
+    {
+        VirtualKey.NO_KEY => "없음",
+        VirtualKey.CONTROL => "Ctrl",
+        VirtualKey.SHIFT => "Shift",
+        VirtualKey.MENU => "Alt",
+        _ => key.GetFancyName(),
+    };
+
+    private static string KeyLabel(VirtualKey key) => key == VirtualKey.NO_KEY ? "끔" : key.GetFancyName();
+
+    /// <summary>단축키 목록에서 뺄 키: 같이 누르는 키(왼쪽·오른쪽 따로인 것 포함)와 마우스 버튼</summary>
+    private static readonly HashSet<VirtualKey> NotHotkeys =
+    [
+        VirtualKey.CONTROL, VirtualKey.SHIFT, VirtualKey.MENU,
+        VirtualKey.LCONTROL, VirtualKey.RCONTROL, VirtualKey.LSHIFT, VirtualKey.RSHIFT, VirtualKey.LMENU, VirtualKey.RMENU,
+        VirtualKey.LBUTTON, VirtualKey.RBUTTON, VirtualKey.MBUTTON, VirtualKey.XBUTTON1, VirtualKey.XBUTTON2,
+    ];
+
+    /// <summary>게임 화면에서 한국어 입력칸으로 가는 단축키: [같이 누르는 키] + [키]</summary>
+    private static void DrawFocusHotkey(Configuration config)
+    {
+        ImGui.TextUnformatted("한국어 입력칸 단축키");
+
+        ImGui.SetNextItemWidth(Layout.ComboWidth(Plugin.HotkeyModifiers.Select(ModifierLabel)));
+        using (var combo = ImRaii.Combo("##hotkeyModifier", ModifierLabel(config.FocusInputModifier)))
+        {
+            if (combo.Success)
+            {
+                foreach (var modifier in Plugin.HotkeyModifiers)
+                {
+                    if (ImGui.Selectable(ModifierLabel(modifier), modifier == config.FocusInputModifier) && modifier != config.FocusInputModifier)
+                    {
+                        config.FocusInputModifier = modifier;
+                        config.Save();
+                    }
+                }
+            }
+        }
+
+        ImGui.SameLine();
+        ImGui.TextUnformatted("+");
+        ImGui.SameLine();
+
+        var keys = Plugin.KeyState.GetValidVirtualKeys().Where(k => !NotHotkeys.Contains(k)).Prepend(VirtualKey.NO_KEY).Distinct().ToList();
+        ImGui.SetNextItemWidth(Layout.FitWidth(160 * ImGuiHelpers.GlobalScale));
+        using (var combo = ImRaii.Combo("##hotkeyKey", KeyLabel(config.FocusInputKey)))
+        {
+            if (combo.Success)
+            {
+                foreach (var key in keys)
+                {
+                    if (ImGui.Selectable(KeyLabel(key), key == config.FocusInputKey) && key != config.FocusInputKey)
+                    {
+                        config.FocusInputKey = key;
+                        config.Save();
+                    }
+                }
+            }
+        }
+
+        WrappedText.Draw(
+            "게임 화면에서 누르면 보내기 창을 열고 한국어 입력칸으로 갑니다. 글을 보내면 입력칸에서 빠져나와 " +
+            "바로 게임을 조작할 수 있습니다. 같이 누르는 키 없이 글자 키를 고르면 게임 채팅에 그 글자를 쓸 때도 반응합니다.",
+            DimColor);
+    }
+
     private void DrawSettings()
     {
         var config = Owner.Configuration;
 
         DrawSendPlacement(config);
+
+        ImGuiHelpers.ScaledDummy(8);
+
+        DrawFocusHotkey(config);
 
         ImGuiHelpers.ScaledDummy(8);
 

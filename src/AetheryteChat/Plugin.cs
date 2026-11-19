@@ -1,3 +1,4 @@
+using Dalamud.Game.ClientState.Keys;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
@@ -17,6 +18,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
     [PluginService] internal static IGameConfig GameConfig { get; private set; } = null!;
     [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
+    [PluginService] internal static IKeyState KeyState { get; private set; } = null!;
 
     private const string CommandName = "/achat";
 
@@ -70,6 +72,7 @@ public sealed class Plugin : IDalamudPlugin
         });
 
         PluginInterface.UiBuilder.Draw += _windowSystem.Draw;
+        Framework.Update += CheckFocusHotkey;
         PluginInterface.UiBuilder.OpenMainUi += ToggleWindows;
         // 플러그인 목록의 설정(톱니) 버튼 — 번역 도구 탭을 연다
         PluginInterface.UiBuilder.OpenConfigUi += _mainWindow.OpenEngineTab;
@@ -89,6 +92,39 @@ public sealed class Plugin : IDalamudPlugin
         _mainWindow.Toggle();
         if (Configuration.SendPanelPlacement == SendPanelPlacement.SeparateWindow)
             SendWindow.IsOpen = _mainWindow.IsOpen;
+    }
+
+    /// <summary>단축키에 쓸 수 있는 같이 누르는 키 (없음·Ctrl·Shift·Alt)</summary>
+    internal static readonly VirtualKey[] HotkeyModifiers = [VirtualKey.NO_KEY, VirtualKey.CONTROL, VirtualKey.SHIFT, VirtualKey.MENU];
+
+    /// <summary>
+    /// 게임 스레드에서 매 프레임. 단축키를 누르면 보내기 창을 열고 한국어 입력칸에 포커스를 준다.
+    /// 우리 입력칸에 글을 쓰는 동안은 Dalamud 가 키를 게임에 넘기지 않아 여기서 보이지 않는다
+    /// </summary>
+    private void CheckFocusHotkey(IFramework framework)
+    {
+        var key = Configuration.FocusInputKey;
+        if (key == VirtualKey.NO_KEY || !KeyState.IsVirtualKeyValid(key) || !KeyState[key])
+            return;
+        // 고른 같이 누르는 키만 눌려 있어야 한다 (Ctrl+Enter 로 정했으면 Ctrl+Shift+Enter 에는 반응하지 않는다)
+        foreach (var modifier in HotkeyModifiers)
+        {
+            if (modifier != VirtualKey.NO_KEY && KeyState[modifier] != (modifier == Configuration.FocusInputModifier))
+                return;
+        }
+
+        // 게임도 같은 키에 반응하지 않게 눌림을 지운다 (Enter 로 게임 채팅 입력이 같이 열리지 않게)
+        KeyState[key] = false;
+        FocusSendInput();
+    }
+
+    /// <summary>보내기가 보이게 창을 열고, 다음에 그릴 때 한국어 입력칸에 포커스를 준다</summary>
+    private void FocusSendInput()
+    {
+        _mainWindow.IsOpen = true;
+        if (Configuration.SendPanelPlacement == SendPanelPlacement.SeparateWindow)
+            SendWindow.IsOpen = true;
+        SendPanel.RequestFocus();
     }
 
     /// <summary>
@@ -173,6 +209,7 @@ public sealed class Plugin : IDalamudPlugin
     public void Dispose()
     {
         PluginInterface.UiBuilder.Draw -= _windowSystem.Draw;
+        Framework.Update -= CheckFocusHotkey;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleWindows;
         PluginInterface.UiBuilder.OpenConfigUi -= _mainWindow.OpenEngineTab;
         CommandManager.RemoveHandler(CommandName);

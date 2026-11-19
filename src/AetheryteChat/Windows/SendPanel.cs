@@ -27,6 +27,13 @@ internal sealed class SendPanel(Plugin plugin)
     private bool _busy;                  // 번역 또는 전송 중. 뜻 확인은 보내기를 막지 않는다
     private string _sendStatus = "";
     private bool _sendStatusIsError;
+    private bool _focusInput;            // 다음에 그릴 때 한국어 입력칸에 포커스를 준다
+
+    /// <summary>단축키로 입력칸에 가려고 기다리는 중인지. 채팅 아래에 붙였으면 받은 채팅 창이 채팅 탭을 연다</summary>
+    public bool FocusPending => _focusInput;
+
+    /// <summary>다음에 그릴 때 이 화면이 든 창을 앞으로 가져오고 한국어 입력칸에 포커스를 준다</summary>
+    public void RequestFocus() => _focusInput = true;
 
     /// <param name="compact">
     /// 채팅 아래에 붙일 때. 채널 이름을 목록 상자 앞에 두고, '한국어' 이름표 대신 입력칸 안내를 쓰고,
@@ -38,6 +45,13 @@ internal sealed class SendPanel(Plugin plugin)
 
         var channel = DrawChannelSelector(compact);
         var prefix = channel.NeedsTellTarget ? $"/t {_tellTarget.Trim()}" : channel.Prefix;
+
+        if (_focusInput)
+        {
+            _focusInput = false;
+            ImGui.SetWindowFocus();
+            ImGui.SetKeyboardFocusHere(); // 바로 아래 입력칸
+        }
 
         bool enter;
         if (compact)
@@ -52,8 +66,6 @@ internal sealed class SendPanel(Plugin plugin)
             ImGui.SetNextItemWidth(-1);
             enter = ImGui.InputText("##ko", ref _koreanInput, 500, ImGuiInputTextFlags.EnterReturnsTrue);
         }
-        if (enter)
-            ImGui.SetKeyboardFocusHere(-1); // Enter 를 눌러도 입력칸에 머물러 한 번 더 누르면 보내지게 한다
 
         var korean = _koreanInput.Trim();
 
@@ -77,7 +89,7 @@ internal sealed class SendPanel(Plugin plugin)
         using (ImRaii.Disabled(!canSend))
         {
             if (ImGui.Button("보내기") && canSend)
-                Send(channel.Key, prefix);
+                SendAndReleaseFocus(channel.Key, prefix);
         }
         var enterHint = canSend ? "Enter: 보내기" : "Enter: 번역";
         Layout.SameLineIfFits(Layout.TextWidth(enterHint));
@@ -86,9 +98,16 @@ internal sealed class SendPanel(Plugin plugin)
         if (enter)
         {
             if (canSend)
-                Send(channel.Key, prefix);
-            else if (canTranslate)
-                Translate(korean);
+            {
+                SendAndReleaseFocus(channel.Key, prefix);
+            }
+            else
+            {
+                // Enter 로 번역하면 입력칸에 머물러 한 번 더 누르면 보내지게 한다 (Enter 를 누르면 입력칸이 풀린다)
+                _focusInput = true;
+                if (canTranslate)
+                    Translate(korean);
+            }
         }
 
         if (!compact)
@@ -276,6 +295,16 @@ internal sealed class SendPanel(Plugin plugin)
             ImGui.InputTextWithHint("##tellTarget", "이름 성@서버", ref _tellTarget, 64);
         }
         return selected;
+    }
+
+    /// <summary>
+    /// 보내고 이 창의 포커스를 푼다 — 키보드가 바로 게임으로 돌아가 이동·단축키를 쓸 수 있게.
+    /// 다시 쓰려면 입력칸을 누르거나 설정의 단축키를 누른다
+    /// </summary>
+    private void SendAndReleaseFocus(string channelKey, string prefix)
+    {
+        Send(channelKey, prefix);
+        ImGuiP.FocusWindow(ImGuiWindowPtr.Null);
     }
 
     private void Send(string channelKey, string prefix)

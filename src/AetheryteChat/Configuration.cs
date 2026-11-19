@@ -1,4 +1,5 @@
 using Dalamud.Configuration;
+using Dalamud.Game.ClientState.Keys;
 using TermGlossary = AetheryteChat.Translation.Glossary;
 
 namespace AetheryteChat;
@@ -100,6 +101,15 @@ public sealed class Configuration : IPluginConfiguration
 
     /// <summary>보내기 위치. 기본은 받은 채팅 아래</summary>
     public SendPanelPlacement SendPanelPlacement { get; set; } = SendPanelPlacement.BelowChat;
+
+    /// <summary>
+    /// 게임 화면에서 보내기의 한국어 입력칸으로 가는 단축키의 키. NO_KEY 면 단축키를 쓰지 않는다.
+    /// 기본은 Ctrl+Enter — 게임의 Enter(채팅 입력)와 짝이 되게
+    /// </summary>
+    public VirtualKey FocusInputKey { get; set; } = VirtualKey.RETURN;
+
+    /// <summary>단축키와 같이 누를 키: NO_KEY(없음)·CONTROL·SHIFT·MENU(Alt)</summary>
+    public VirtualKey FocusInputModifier { get; set; } = VirtualKey.CONTROL;
 
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 
