@@ -112,10 +112,15 @@ public sealed class Glossary
             {
                 if (term.Length == 0)
                     continue;
+                // 영문 약어(MT·ST·LB 등)는 앞뒤에 다른 영문자가 없을 때만 — 플레이어 이름(Christina 의 st) 안에서 걸리지 않게
+                var ascii = term.All(char.IsAsciiLetterOrDigit);
                 var at = new List<int>();
                 for (var i = source.IndexOf(term, StringComparison.Ordinal); i >= 0;
                      i = source.IndexOf(term, i + 1, StringComparison.Ordinal))
-                    at.Add(i);
+                {
+                    if (!ascii || (!IsAsciiLetterAt(source, i - 1) && !IsAsciiLetterAt(source, i + term.Length)))
+                        at.Add(i);
+                }
                 if (at.Count == 0)
                     continue;
                 found.Add((value, at, term.Length));
@@ -138,15 +143,29 @@ public sealed class Glossary
     public string ToText() => string.Join('\n', _entries.Select(e =>
         $"{e.Value.Japanese} → {string.Join(" | ", [e.Value.Korean, .. e.Aliases])}"));
 
-    /// <summary>비교용 형태: NFKC(전각 영숫자 → 반각, 반각 가타카나 → 전각), 공백 제거, 소문자</summary>
+    private static bool IsAsciiLetterAt(string s, int index) =>
+        index >= 0 && index < s.Length && char.IsAsciiLetter(s[index]);
+
+    /// <summary>
+    /// 비교용 형태: NFKC(전각 영숫자 → 반각, 반각 가타카나 → 전각), 소문자, 공백 제거.
+    /// 영숫자 사이의 공백만 하나 남긴다 — 'Taro MT' 가 'taromt' 로 붙어 영문 약어의 앞뒤를 가리지 못하게 되지 않게
+    /// </summary>
     internal static string Normalize(string s)
     {
         var nfkc = s.Normalize(NormalizationForm.FormKC);
         var sb = new StringBuilder(nfkc.Length);
+        var space = false;
         foreach (var c in nfkc)
         {
-            if (!char.IsWhiteSpace(c))
-                sb.Append(char.ToLowerInvariant(c));
+            if (char.IsWhiteSpace(c))
+            {
+                space = true;
+                continue;
+            }
+            if (space && sb.Length > 0 && char.IsAsciiLetterOrDigit(sb[^1]) && char.IsAsciiLetterOrDigit(c))
+                sb.Append(' ');
+            space = false;
+            sb.Append(char.ToLowerInvariant(c));
         }
         return sb.ToString();
     }
