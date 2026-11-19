@@ -198,6 +198,20 @@ dotnet run --project tools/TranslatorConsole -- ja2ko --glossary my-glossary.txt
   가타카나 애칭(タロさん 등)이나 한글로 옮긴 이름은 가리지 못합니다.
 - 다른 플레이어의 대화가 들어 있으므로 **저장소 밖에 두고 커밋하지 마세요**.
 
+개발 PC 에서는 콘솔로 용어 후보를 뽑고 효과를 잽니다. 결과 파일은 모두 표본 폴더에 씁니다.
+
+```powershell
+# 용어 후보(가타카나·한자 2자 이상, 영문 약어) → terms.tsv, 엔진끼리 다른 번역·오역 제보·역번역 차이 → disagreements.tsv
+dotnet run --project tools/TranslatorConsole -- samples terms <표본 폴더> [--min-count 3]
+# 용어집 용어가 든 줄을 평가 묶음으로 고정 → evalset.jsonl
+dotnet run --project tools/TranslatorConsole -- samples evalset <표본 폴더> [--max 200]
+# 용어 적중률·시간·입력 토큰. --glossary <파일> / --no-glossary 로 용어집을 바꾸기 전후를 비교
+dotnet run --project tools/TranslatorConsole -- samples eval <표본 폴더>/evalset.jsonl --engine codex
+```
+
+용어는 자동으로 넣지 않습니다. `terms.tsv` 를 보고 한국 서버에서 실제로 쓰는 말만 골라 `default-glossary.txt` 에 덧붙입니다
+(예문은 커밋하지 않습니다).
+
 ### 배포
 
 `v` 로 시작하는 태그(예: `v0.1.0.0`)를 올리면 GitHub Actions 가 빌드해 Release 에 `latest.zip` 을 올리고
