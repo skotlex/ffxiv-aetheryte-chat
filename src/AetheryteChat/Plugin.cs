@@ -99,24 +99,51 @@ public sealed class Plugin : IDalamudPlugin
 
     /// <summary>
     /// 게임 스레드에서 매 프레임. 단축키를 누르면 보내기 창을 열고 한국어 입력칸에 포커스를 준다.
-    /// 우리 입력칸에 글을 쓰는 동안은 Dalamud 가 키를 게임에 넘기지 않아 여기서 보이지 않는다
+    /// 우리 입력칸에 글을 쓰는 동안은 Dalamud 가 키를 게임에 넘기지 않아 여기서 보이지 않는다 — 그때 다시 누르는 것은 SendPanel 이 본다
     /// </summary>
     private void CheckFocusHotkey(IFramework framework)
     {
         var key = Configuration.FocusInputKey;
-        if (key == VirtualKey.NO_KEY || !KeyState.IsVirtualKeyValid(key) || !KeyState[key])
+        if (key == VirtualKey.NO_KEY || !KeyState.IsVirtualKeyValid(key))
             return;
-        // 고른 같이 누르는 키만 눌려 있어야 한다 (Ctrl+Enter 로 정했으면 Ctrl+Shift+Enter 에는 반응하지 않는다)
+
+        // 들어가거나 빠져나온 뒤에는 키를 한 번 뗄 때까지 다시 반응하지 않는다 — 길게 누르면 생기는 반복 입력으로
+        // 들어갔다 나왔다 하지 않게. 시간으로 막으면 빠르게 이어 누를 때 한 번 씹힌다
+        if (_hotkeyNeedsKeyUp)
+        {
+            if (PhysicalKeys.IsDown(key))
+            {
+                KeyState[key] = false; // 누르고 있는 동안 반복 입력이 게임에 가지 않게
+                return;
+            }
+            _hotkeyNeedsKeyUp = false;
+        }
+
+        if (!KeyState[key])
+            return;
+        // 고른 같이 누르는 키만 눌려 있어야 한다 (Ctrl+Enter 로 정했으면 Ctrl+Shift+Enter 에는 반응하지 않는다).
+        // 같이 누르는 키는 실제 키보드로 본다 — Shift 를 누른 채 입력칸에서 빠져나와 다시 누르면 게임 쪽 상태에는 Shift 가 없다
         foreach (var modifier in HotkeyModifiers)
         {
-            if (modifier != VirtualKey.NO_KEY && KeyState[modifier] != (modifier == Configuration.FocusInputModifier))
+            if (modifier != VirtualKey.NO_KEY && PhysicalKeys.IsDown(modifier) != (modifier == Configuration.FocusInputModifier))
                 return;
         }
 
         // 게임도 같은 키에 반응하지 않게 눌림을 지운다 (Enter 로 게임 채팅 입력이 같이 열리지 않게)
         KeyState[key] = false;
-        FocusSendInput();
+        // 입력칸에 있을 때 한 번 더 누르면 빠져나오는 것은 SendPanel 이 맡는다
+        if (!SendPanel.IgnoresGameHotkey)
+        {
+            FocusSendInput();
+            _hotkeyNeedsKeyUp = true;
+        }
     }
+
+    // 단축키로 들어가거나 빠져나온 뒤, 키를 뗄 때까지 기다리는 중인지
+    private bool _hotkeyNeedsKeyUp;
+
+    /// <summary>단축키로 입력칸에서 빠져나왔을 때 SendPanel 이 부른다. 키를 뗄 때까지 다시 들어가지 않는다</summary>
+    internal void WaitHotkeyKeyUp() => _hotkeyNeedsKeyUp = true;
 
     /// <summary>보내기가 보이게 창을 열고, 다음에 그릴 때 한국어 입력칸에 포커스를 준다</summary>
     private void FocusSendInput()

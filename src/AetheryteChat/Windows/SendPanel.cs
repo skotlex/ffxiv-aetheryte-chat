@@ -1,5 +1,6 @@
 using AetheryteChat.Translation;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game.ClientState.Keys;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using static AetheryteChat.Windows.UiCommon;
@@ -28,12 +29,20 @@ internal sealed class SendPanel(Plugin plugin)
     private string _sendStatus = "";
     private bool _sendStatusIsError;
     private bool _focusInput;            // 다음에 그릴 때 한국어 입력칸에 포커스를 준다
+    private bool _inputActive;           // 지난 프레임에 한국어 입력칸에 글을 쓰고 있었는지
+    private long _inputActiveAt;         // 마지막으로 입력칸에 있던 시각 (Environment.TickCount64)
 
     /// <summary>단축키로 입력칸에 가려고 기다리는 중인지. 채팅 아래에 붙였으면 받은 채팅 창이 채팅 탭을 연다</summary>
     public bool FocusPending => _focusInput;
 
     /// <summary>다음에 그릴 때 이 화면이 든 창을 앞으로 가져오고 한국어 입력칸에 포커스를 준다</summary>
     public void RequestFocus() => _focusInput = true;
+
+    /// <summary>
+    /// 게임 쪽에서 본 단축키를 무시할지 — 입력칸에 있는 동안은 이 화면이 단축키를 받아 포커스를 푼다.
+    /// 시각도 보는 것은 채팅 탭을 떠나 이 화면을 그리지 않게 되어도 '입력 중' 이 남지 않게 하려는 것
+    /// </summary>
+    public bool IgnoresGameHotkey => _inputActive && Environment.TickCount64 - _inputActiveAt < 200;
 
     /// <param name="compact">
     /// 채팅 아래에 붙일 때. 채널 이름을 목록 상자 앞에 두고, '한국어' 이름표 대신 입력칸 안내를 쓰고,
@@ -65,6 +74,20 @@ internal sealed class SendPanel(Plugin plugin)
             ImGui.TextUnformatted("한국어");
             ImGui.SetNextItemWidth(-1);
             enter = ImGui.InputText("##ko", ref _koreanInput, 500, ImGuiInputTextFlags.EnterReturnsTrue);
+        }
+
+        // 입력칸에 있는 동안 단축키를 한 번 더 누르면 빠져나온다. 단축키가 Ctrl+Enter 면 입력칸이 Enter 로도 받으므로
+        // 번역·보내기로 넘어가지 않게 한다
+        var releaseByHotkey = _inputActive && HotkeyPressed();
+        _inputActive = ImGui.IsItemActive();
+        if (_inputActive)
+            _inputActiveAt = Environment.TickCount64;
+        if (releaseByHotkey)
+        {
+            enter = false;
+            _inputActive = false;
+            ReleaseFocus();
+            plugin.WaitHotkeyKeyUp(); // 누르고 있는 동안 게임 쪽에서 다시 들어가지 않게
         }
 
         var korean = _koreanInput.Trim();
@@ -304,7 +327,32 @@ internal sealed class SendPanel(Plugin plugin)
     private void SendAndReleaseFocus(string channelKey, string prefix)
     {
         Send(channelKey, prefix);
+        ReleaseFocus();
+    }
+
+    /// <summary>어느 창에도 포커스가 없게 해 키보드를 게임에 돌려준다 (입력칸도 풀린다)</summary>
+    private void ReleaseFocus()
+    {
         ImGuiP.FocusWindow(ImGuiWindowPtr.Null);
+    }
+
+    /// <summary>
+    /// 이번 프레임에 설정의 단축키를 눌렀는지 ImGui 로 본다. 입력칸에 있는 동안은 Dalamud 가 키를 게임에 넘기지 않아
+    /// 게임 쪽 키 상태(IKeyState)로는 보이지 않는다. 길게 눌러 생긴 반복 입력은 세지 않는다
+    /// </summary>
+    private bool HotkeyPressed()
+    {
+        var config = plugin.Configuration;
+        if (config.FocusInputKey == VirtualKey.NO_KEY)
+            return false;
+        var key = ImGuiHelpers.VirtualKeyToImGuiKey(config.FocusInputKey);
+        if (key == ImGuiKey.None || !ImGui.IsKeyPressed(key, false))
+            return false;
+        var io = ImGui.GetIO();
+        var modifier = config.FocusInputModifier;
+        return io.KeyCtrl == (modifier == VirtualKey.CONTROL)
+               && io.KeyShift == (modifier == VirtualKey.SHIFT)
+               && io.KeyAlt == (modifier == VirtualKey.MENU);
     }
 
     private void Send(string channelKey, string prefix)
