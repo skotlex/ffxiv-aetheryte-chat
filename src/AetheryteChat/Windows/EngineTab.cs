@@ -33,7 +33,7 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
     private const string OllamaDownloadUrl = "https://ollama.com/download";
 
     /// <summary>모델 목록에 늘 보이는 권장 모델 (GPU 가 넉넉할 때 / GPU 가 없거나 적을 때)</summary>
-    private static readonly string[] RecommendedOllamaModels = [OllamaModels.LargeModel, OllamaModels.SmallModel];
+    private static readonly string[] RecommendedOllamaModels = [OllamaModels.LargeModel, OllamaModels.MidModel, OllamaModels.SmallModel];
 
     /// <summary>이 PC 의 그래픽카드로 고른 권장 모델. 그래픽카드는 플러그인을 켜 있는 동안 바뀌지 않으므로 한 번만 정한다</summary>
     private static readonly OllamaRecommendation ThisPc = OllamaModels.RecommendForThisPc();
@@ -227,6 +227,8 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
         }
         HelpText($"{OllamaModels.LargeModel}(받을 때 약 8.2GB)는 한↔일 게임 용어까지 맞게 옮깁니다. 그래픽카드 메모리가 12GB 이상일 때 권합니다 " +
                  "(게임도 그래픽카드 메모리를 쓰므로). " +
+                 $"{OllamaModels.MidModel}(약 5.1GB)는 그 사이로, 게임 용어는 12b와 비슷하게 맞고 메모리는 약 5.4GB를 씁니다. " +
+                 "8GB 이상일 때 권합니다. 비상업 라이선스(CC-BY-NC 4.0)라 개인 용도로만 쓸 수 있습니다. " +
                  $"{OllamaModels.SmallModel}(약 3.4GB)는 GPU 없이 CPU만으로도 한 줄에 약 3초, 처음 올릴 때 약 17초였습니다 " +
                  "(내장 그래픽 노트북 실측). gemma3:1b 처럼 더 작은 모델은 번역을 제대로 하지 못했습니다.");
 
@@ -286,8 +288,8 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
 
         WrappedText.Draw($"{s.Model} 모델을 아직 받지 않았습니다.", ErrorColor);
         // 큰 모델을 이 PC 에서 돌리면 CPU 로 돌아 한 줄에 수십 초 걸릴 수 있다 — 받기 전에 알린다
-        if (OllamaTranslator.SameModel(s.Model, OllamaModels.LargeModel) && recommended == OllamaModels.SmallModel)
-            WrappedText.Draw($"이 PC의 그래픽카드로는 {s.Model}가 매우 느릴 수 있습니다 — {OllamaModels.SmallModel}를 권합니다.", ErrorColor);
+        if (recommended is not null && OllamaModels.Tier(s.Model) > OllamaModels.Tier(recommended))
+            WrappedText.Draw($"이 PC의 그래픽카드로는 {s.Model}가 매우 느릴 수 있습니다 — {recommended}를 권합니다.", ErrorColor);
 
         // 받기 전에 크기와 디스크 여유를 알린다 — 수 GB 라 모르고 받으면 디스크가 찰 수 있다
         if (!_downloadSizes.TryGetValue(s.Model, out var sizeTask))

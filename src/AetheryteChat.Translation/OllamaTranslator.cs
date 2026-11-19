@@ -36,6 +36,14 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
 {
     private static readonly HttpClient Http = new();
 
+    /// <summary>
+    /// 모델에 잡게 할 문맥 길이(토큰). 넘기지 않으면 Ollama 가 GPU 메모리에 맞춰 길게 잡아 그만큼 메모리를 더 쓴다 —
+    /// 2026-11-19 RTX 4090 에서 qwen3:8b 10.0GB → 5.3GB, aya-expanse:8b 6.4GB → 5.4GB 로 줄었고 번역은 같았다
+    /// (gemma3 는 거의 그대로). 채팅 한 줄 번역은 지시문·용어를 합쳐 입력 300토큰, 출력 50토큰 안팎이라 넉넉하다.
+    /// 미리 올리기와 번역에 같은 값을 넘겨야 한다 — 다르면 Ollama 가 모델을 다시 올린다
+    /// </summary>
+    public const int ContextLength = 2048;
+
     // 답을 {"translation": "..."} 꼴로 강제한다 (Ollama 의 구조화 출력)
     private static readonly JsonNode AnswerSchema = JsonNode.Parse("""
         {"type":"object","properties":{"translation":{"type":"string"}},"required":["translation"]}
@@ -121,7 +129,12 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
     {
         try
         {
-            var body = new JsonObject { ["model"] = options.Model, ["keep_alive"] = options.KeepAlive };
+            var body = new JsonObject
+            {
+                ["model"] = options.Model,
+                ["keep_alive"] = options.KeepAlive,
+                ["options"] = new JsonObject { ["num_ctx"] = ContextLength },
+            };
             using var response = await Http.PostAsJsonAsync($"{BaseUrl}/api/generate", body);
         }
         catch (HttpRequestException)
@@ -142,7 +155,7 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
             ["think"] = false, // 생각하는 모델(qwen3 등)도 바로 답하게 한다 — 채팅 번역에는 생각이 필요 없고 느려진다
             ["keep_alive"] = options.KeepAlive,
             ["format"] = AnswerSchema.DeepClone(),
-            ["options"] = new JsonObject { ["temperature"] = 0.2 },
+            ["options"] = new JsonObject { ["temperature"] = 0.2, ["num_ctx"] = ContextLength },
             ["messages"] = new JsonArray
             {
                 new JsonObject { ["role"] = "system", ["content"] = Prompts.For(direction) },
