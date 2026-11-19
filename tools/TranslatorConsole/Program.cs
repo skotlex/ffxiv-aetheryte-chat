@@ -7,6 +7,7 @@
 // 옵션: --engine <claude|codex|ollama|papago> (기본 claude), --model <name> (claude 기본 haiku, ollama 기본 gemma3:12b),
 //       --effort <low|medium|high> (claude: --effort, codex: reasoning effort), --exe <실행 파일 경로>,
 //       --endpoint <url> (ollama 주소, 기본 http://127.0.0.1:11434)
+//       --codex-standard (Codex 경량 모드를 끄고 기존 방식으로 비교)
 
 using System.Text;
 using AetheryteChat.Translation;
@@ -16,6 +17,7 @@ Console.OutputEncoding = Encoding.UTF8;
 
 string engine = "claude";
 string? model = null, effort = null, exe = null, endpoint = null;
+bool codexLightweight = true;
 var positional = new List<string>();
 for (var i = 0; i < args.Length; i++)
 {
@@ -26,6 +28,7 @@ for (var i = 0; i < args.Length; i++)
         case "--effort": effort = args[++i]; break;
         case "--exe": exe = args[++i]; break;
         case "--endpoint": endpoint = args[++i]; break;
+        case "--codex-standard": codexLightweight = false; break;
         default: positional.Add(args[i]); break;
     }
 }
@@ -34,6 +37,7 @@ if (positional.Count == 0)
 {
     Console.Error.WriteLine("사용법: TranslatorConsole (auth | ja2ko | ko2ja) [--engine claude|codex|ollama|papago] [--model m] [--effort e] [--exe path] [--endpoint url] [문장]");
     Console.Error.WriteLine("        TranslatorConsole ollama (size | pull | ps | unload) [--model m] [--endpoint url]");
+    Console.Error.WriteLine("        --codex-standard: Codex 경량 모드 끄기 (비교용)");
     return 2;
 }
 
@@ -102,7 +106,7 @@ switch (engine)
         exePath = exe ?? ClaudeCliLocator.Find();
         break;
     case "codex":
-        var codex = new CodexCliOptions { ExecutablePath = exe, Model = model };
+        var codex = new CodexCliOptions { ExecutablePath = exe, Model = model, Lightweight = codexLightweight };
         if (effort is not null)
             codex.ReasoningEffort = effort;
         translator = new CodexCliTranslator(codex);
@@ -132,6 +136,8 @@ try
     {
         Console.WriteLine($"{translator.Name}: {exePath ?? "(못 찾음)"}");
         Console.WriteLine($"로그인: {(await translator.IsLoggedInAsync() ? "됨" : "안 됨")}");
+        if (translator is CodexCliTranslator codexTranslator)
+            Console.WriteLine($"경량 번역: {(!codexLightweight ? "끔" : codexTranslator.LightweightOffReason ?? "씀")}");
         return 0;
     }
 
