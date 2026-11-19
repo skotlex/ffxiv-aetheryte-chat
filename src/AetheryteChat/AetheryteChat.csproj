@@ -10,11 +10,18 @@
 Square Enix와 관련 없는 비공식 도구입니다.</Description>
     <RepoUrl>https://github.com/skotlex/ffxiv-aetheryte-chat</RepoUrl>
     <Tags>chat;translation;korean;japanese</Tags>
+    <!-- 플러그인 목록의 아이콘. 저장소로 설치하면 이 주소에서, Dev Plugin 은 DLL 옆의 images/icon.png 에서 읽는다 -->
+    <IconUrl>https://raw.githubusercontent.com/skotlex/ffxiv-aetheryte-chat/main/src/AetheryteChat/images/icon.png</IconUrl>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>AetheryteChat</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- icon.svg 가 원본 (게임 리소스를 쓰지 않고 직접 그림). 고치면 512x512 PNG 로 다시 뽑는다 -->
+    <Content Include="images\icon.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AetheryteChat.Translation\AetheryteChat.Translation.csproj" />

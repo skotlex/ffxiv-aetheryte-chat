@@ -8,6 +8,7 @@
     "Punchline": "일본 DC 채팅을 한국어로 읽고, 한국어로 써서 일본어로 보냅니다.",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/skotlex/ffxiv-aetheryte-chat",
+    "IconUrl": "https://raw.githubusercontent.com/skotlex/ffxiv-aetheryte-chat/main/src/AetheryteChat/images/icon.png",
     "Tags": [
       "chat",
       "translation",
