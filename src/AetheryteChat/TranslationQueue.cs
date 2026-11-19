@@ -39,6 +39,11 @@ internal sealed partial class TranslationQueue : IDisposable
     // 지금 설정으로 엔진을 만든다 — 설정을 바꾸거나 '다시 확인' 할 때 새로 만든다
     private readonly Func<ITranslator> _createTranslator;
 
+    // 준비가 안 됐을 때(로그인 전·로그인이 풀림·확인 중·Ollama 꺼짐) 들어와 번역하지 못한 최근 줄.
+    // 준비되면 이어서 번역한다 — 로그인한 뒤 그 전에 받은 대화가 번역 없이 남지 않게
+    private const int MaxBacklog = 10;
+    private readonly List<ChatLine> _backlog = [];
+
     public TranslationQueue(Func<ITranslator> createTranslator, Func<XivChatType, bool> isChannelEnabled)
     {
         _createTranslator = createTranslator;
@@ -52,6 +57,53 @@ internal sealed partial class TranslationQueue : IDisposable
     public bool AutoTranslate { get; set; } = true;
     public string EngineName => _translator.Name;
     public string NotReadyHint => _translator.NotReadyHint;
+
+    /// <summary>지금 도구가 플러그인에서 로그인 창을 띄울 수 있는지 (Claude·Codex CLI)</summary>
+    public bool CanLogin => _translator.CanLogin;
+
+    /// <summary>로그인 창이 떠 있다 — 창이 닫히면 다시 확인한다</summary>
+    public bool LoggingIn { get; private set; }
+
+    /// <summary>새 콘솔 창에서 로그인 명령을 띄운다(브라우저가 열린다). 창이 닫히면 상태를 다시 확인한다. UI 스레드에서 부른다</summary>
+    public void StartLogin()
+    {
+        var translator = _translator;
+        if (LoggingIn || !translator.CanLogin)
+            return;
+        LoggingIn = true;
+        _ = LoginAsync(translator);
+    }
+
+    private async Task LoginAsync(ITranslator translator)
+    {
+        string? error = null;
+        try
+        {
+            await translator.LoginAsync(_cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return; // 플러그인을 내릴 때. 로그인 창은 그대로 둔다
+        }
+        catch (TranslationException e)
+        {
+            error = e.Message;
+        }
+
+        await Plugin.Framework.RunOnFrameworkThread(() =>
+        {
+            LoggingIn = false;
+            if (_translator != translator)
+                return; // 그사이 도구를 바꿨다
+            if (error is null)
+            {
+                Reload();
+                return;
+            }
+            Status = EngineStatus.Unavailable;
+            StatusDetail = error;
+        });
+    }
 
     /// <summary>
     /// 지금 설정으로 엔진을 다시 만들고 상태를 다시 확인한다. 엔진·엔진 설정을 바꿨을 때,
@@ -76,9 +128,14 @@ internal sealed partial class TranslationQueue : IDisposable
             return;
         }
 
-        if (!AutoTranslate || Status != EngineStatus.Ready || !_isChannelEnabled(line.Channel) || !ContainsJapanese(line.Message))
+        if (!AutoTranslate || !_isChannelEnabled(line.Channel) || !ContainsJapanese(line.Message))
             return;
 
+        if (Status != EngineStatus.Ready)
+        {
+            AddBacklog(line); // 준비되면 이어서 번역한다
+            return;
+        }
         Start(line, _translator);
     }
 
@@ -115,20 +172,82 @@ internal sealed partial class TranslationQueue : IDisposable
 
     /// <summary>번역을 시작할 때의 도구로 이름표를 붙이고 번역한다 — 이름표와 실제로 번역한 도구가 어긋나지 않게</summary>
     private void Start(ChatLine line, ITranslator translator) =>
-        _ = TranslateAsync(line.Message, line.AddTranslation(translator.ShortName), translator, _cts.Token);
+        _ = TranslateAsync(line, line.AddTranslation(translator.ShortName), translator, _cts.Token);
+
+    private void AddBacklog(ChatLine line)
+    {
+        lock (_backlog)
+        {
+            _backlog.Remove(line);
+            _backlog.Add(line);
+            if (_backlog.Count > MaxBacklog)
+                _backlog.RemoveAt(0);
+        }
+    }
+
+    /// <summary>준비된 뒤 밀린 줄을 번역한다. 자동 번역을 꺼 두었으면 그대로 둔다</summary>
+    private void FlushBacklog(ITranslator translator)
+    {
+        if (!AutoTranslate)
+            return;
+        List<ChatLine> lines;
+        lock (_backlog)
+        {
+            lines = [.. _backlog];
+            _backlog.Clear();
+        }
+        foreach (var line in lines.Where(l => !l.HasTranslationFrom(translator.ShortName)))
+            Start(line, translator);
+    }
+
+    /// <summary>번역하지 못한 줄을 실패로 남기지 않고 빼 두었다가, 준비되면 다시 번역한다</summary>
+    private void Defer(ChatLine line, LineTranslation target)
+    {
+        line.RemoveTranslation(target);
+        AddBacklog(line);
+    }
+
+    /// <summary>
+    /// 쓰는 도중 로그인이 풀렸다(토큰 만료·로그아웃). 상태를 '로그인 안 됨' 으로 되돌려 번역을 멈추고 로그인 버튼을 보이게 한다
+    /// </summary>
+    private void MarkLoggedOut(ITranslator translator)
+    {
+        if (translator != _translator)
+            return; // 이미 다른 도구로 바꿨다
+        StatusDetail = null;
+        Status = EngineStatus.NotLoggedIn;
+    }
 
     /// <summary>
     /// 보낼 한국어를 일본어로 번역한다. 사용자가 기다리는 중이라 받은 채팅의 동시 실행 제한을 거치지 않는다.
     /// </summary>
     public Task<TranslationResult> TranslateOutgoingAsync(string korean) =>
-        _translator.TranslateAsync(korean, TranslationDirection.KoToJa, _cts.Token);
+        WatchAuthAsync(_translator, t => t.TranslateAsync(korean, TranslationDirection.KoToJa, _cts.Token));
 
     /// <summary>
     /// 보낼 일본어를 다시 한국어로 옮겨 뜻을 확인하게 한다. 일본어를 못 읽는 사용자가 보내기 전에 확인하는 용도라
     /// 한국어 원문은 넘기지 않고 일본어만 따로 번역한다 — 같은 호출에서 받으면 원문을 되풀이하기 쉬워 확인이 안 된다.
     /// </summary>
     public Task<TranslationResult> TranslateBackAsync(string japanese) =>
-        _translator.TranslateAsync(japanese, TranslationDirection.JaToKo, _cts.Token);
+        WatchAuthAsync(_translator, t => t.TranslateAsync(japanese, TranslationDirection.JaToKo, _cts.Token));
+
+    /// <summary>보내기 쪽 번역이 로그인 문제로 실패하면 상태를 되돌리고, 무엇을 하면 되는지 알려 준다</summary>
+    private async Task<TranslationResult> WatchAuthAsync(
+        ITranslator translator, Func<ITranslator, Task<TranslationResult>> translate)
+    {
+        try
+        {
+            return await translate(translator);
+        }
+        catch (TranslationException e) when (e.IsAuthError)
+        {
+            MarkLoggedOut(translator);
+            throw new TranslationException("로그인이 풀렸습니다 — 상태 줄의 '로그인'을 눌러 다시 로그인해 주세요.", e)
+            {
+                IsAuthError = true,
+            };
+        }
+    }
 
     /// <summary>보낸 일본어와 그 한국어 원문을 기억한다. 받은 채팅에 같은 글이 오면 한 번 쓰고 지운다.</summary>
     public void RememberSent(string japanese, string korean)
@@ -181,16 +300,26 @@ internal sealed partial class TranslationQueue : IDisposable
             return; // 그사이 엔진이 바뀌었다
         StatusDetail = detail;
         Status = status;
+
+        // 이 확인을 기다리는 '도구를 바꾼 뒤 다시 번역' 보다 먼저 밀린 줄을 시작한다 — 같은 줄을 두 번 번역하지 않게
+        if (status == EngineStatus.Ready)
+            FlushBacklog(translator);
     }
 
-    private async Task TranslateAsync(string message, LineTranslation target, ITranslator translator, CancellationToken ct)
+    private async Task TranslateAsync(ChatLine line, LineTranslation target, ITranslator translator, CancellationToken ct)
     {
         try
         {
             await _slots.WaitAsync(ct);
             try
             {
-                var result = await translator.TranslateAsync(message, TranslationDirection.JaToKo, ct);
+                // 기다리는 사이 로그인이 풀린 것을 알았으면 CLI 를 부르지 않고 미뤄 둔다 (Codex 는 실패하는 데만 25초쯤 걸린다)
+                if (translator == _translator && Status != EngineStatus.Ready)
+                {
+                    Defer(line, target);
+                    return;
+                }
+                var result = await translator.TranslateAsync(line.Message, TranslationDirection.JaToKo, ct);
                 target.Complete(TranslationState.Done, result.Text);
             }
             finally
@@ -201,6 +330,12 @@ internal sealed partial class TranslationQueue : IDisposable
         catch (OperationCanceledException)
         {
             // 플러그인을 내릴 때
+        }
+        catch (TranslationException e) when (e.IsAuthError)
+        {
+            Defer(line, target);
+            MarkLoggedOut(translator);
+            Plugin.Log.Warning("받은 채팅 번역 실패: 로그인이 안 됐거나 풀림");
         }
         catch (TranslationException e)
         {

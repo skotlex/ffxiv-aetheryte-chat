@@ -68,6 +68,15 @@ internal sealed class ChatLine(DateTime time, XivChatType channel, string sender
             Volatile.Write(ref _translations, [.. _translations, translation]);
         return translation;
     }
+
+    /// <summary>
+    /// 번역 하나를 뺀다. 로그인이 풀려 번역하지 못한 줄은 실패로 남기지 않고 빼 두었다가, 다시 로그인하면 번역한다
+    /// </summary>
+    public void RemoveTranslation(LineTranslation translation)
+    {
+        lock (_lock)
+            Volatile.Write(ref _translations, [.. _translations.Where(t => t != translation)]);
+    }
 }
 
 /// <summary>

@@ -32,6 +32,16 @@ public interface ITranslator
     /// <summary>모델을 부르지 않고 로그인 상태만 확인한다.</summary>
     Task<bool> IsLoggedInAsync(CancellationToken ct = default);
 
+    /// <summary>플러그인에서 로그인 창을 띄울 수 있는 도구인지 (Claude·Codex CLI)</summary>
+    bool CanLogin => false;
+
+    /// <summary>
+    /// 새 콘솔 창에서 CLI 의 로그인 명령을 실행하고(브라우저가 열린다) 그 창이 닫힐 때까지 기다린다.
+    /// 로그인했는지는 끝난 뒤 IsLoggedInAsync 로 다시 확인한다
+    /// </summary>
+    /// <exception cref="TranslationException">실행 파일을 못 찾았거나 창을 열지 못함</exception>
+    Task LoginAsync(CancellationToken ct = default) => Task.CompletedTask;
+
     /// <exception cref="TranslationException">실행 실패·시간 초과·응답 파싱 실패</exception>
     Task<TranslationResult> TranslateAsync(
         string text,
@@ -40,4 +50,8 @@ public interface ITranslator
 }
 
 public sealed class TranslationException(string message, Exception? inner = null)
-    : Exception(message, inner);
+    : Exception(message, inner)
+{
+    /// <summary>로그인이 안 됐거나 풀려서 실패했다 — 다시 로그인하면 될 일이다</summary>
+    public bool IsAuthError { get; init; }
+}

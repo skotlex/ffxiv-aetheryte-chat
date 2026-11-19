@@ -1,5 +1,6 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility.Raii;
 
 namespace AetheryteChat.Windows;
 
@@ -13,7 +14,8 @@ internal static class UiCommon
     /// <summary>
     /// 엔진 상태를 바로 앞 컨트롤 옆에 그린다. 자리가 모자라면 다음 줄에 줄바꿈해서 그린다.
     /// rightAlign 이면 그 줄의 오른쪽 끝에 붙인다.
-    /// 준비가 안 됐으면 글자를 눌러 다시 확인할 수 있다 — 터미널에서 로그인하거나 Ollama 를 켠 뒤 플러그인을 다시 켜지 않아도 되게
+    /// 준비가 안 됐으면 글자를 눌러 다시 확인할 수 있다 — 터미널에서 로그인하거나 Ollama 를 켠 뒤 플러그인을 다시 켜지 않아도 되게.
+    /// 로그인이 안 된 Claude·Codex 면 옆에 '로그인' 버튼을 둔다 — 터미널을 몰라도 로그인할 수 있게
     /// </summary>
     public static void DrawEngineStatus(TranslationQueue queue, bool rightAlign = false)
     {
@@ -25,7 +27,11 @@ internal static class UiCommon
             EngineStatus.NotLoggedIn => ($"{name} {queue.NotReadyHint}".TrimStart(), ErrorColor),
             _ => ($"{name} 사용 불가: {queue.StatusDetail}".TrimStart(), ErrorColor),
         };
-        var width = Layout.TextWidth(text);
+        var showLogin = queue.Status == EngineStatus.NotLoggedIn && queue.CanLogin;
+        var loginLabel = queue.LoggingIn ? "로그인 중…###login" : "로그인###login";
+        var loginWidth = showLogin ? ImGui.GetStyle().ItemSpacing.X + Layout.ButtonWidth(loginLabel) : 0;
+
+        var width = Layout.TextWidth(text) + loginWidth;
         var placed = rightAlign ? Layout.RightAlign(width) : Layout.SameLineIfFits(width);
         if (placed)
         {
@@ -43,6 +49,22 @@ internal static class UiCommon
             ImGui.SetTooltip("눌러서 다시 확인");
             if (ImGui.IsItemClicked())
                 queue.Reload();
+        }
+
+        if (!showLogin)
+            return;
+        if (placed)
+            ImGui.SameLine();
+        using (ImRaii.Disabled(queue.LoggingIn))
+        {
+            if (ImGui.Button(loginLabel))
+                queue.StartLogin();
+        }
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+        {
+            ImGui.SetTooltip(queue.LoggingIn
+                ? "새로 열린 창과 브라우저에서 로그인을 마쳐 주세요. 창이 닫히면 자동으로 다시 확인합니다"
+                : "새 창과 브라우저가 열려 구독 계정으로 로그인합니다");
         }
     }
 

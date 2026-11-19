@@ -111,7 +111,8 @@ try
         }
         catch (TranslationException e)
         {
-            Console.Error.WriteLine($"{text}\n✗ {e.Message}");
+            // 플러그인은 로그인 문제면 실패로 남기지 않고 '로그인 안 됨' 으로 되돌린다 — 그 판정을 여기서도 보여 준다
+            Console.Error.WriteLine($"{text}\n✗ {e.Message}{(e.IsAuthError ? " [로그인 필요]" : "")}");
         }
     }
 }

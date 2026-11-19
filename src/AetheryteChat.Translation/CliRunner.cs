@@ -75,6 +75,35 @@ internal static class CliRunner
         }
     }
 
+    /// <summary>
+    /// 로그인처럼 사용자가 직접 보고 입력해야 하는 명령을 새 콘솔 창에서 실행하고, 창이 닫힐 때까지 기다린다.
+    /// 인자는 따옴표가 필요 없는 짧은 고정 명령(auth login 등)만 넘긴다
+    /// </summary>
+    public static async Task RunInNewWindowAsync(
+        string executable, string arguments, string workingDirectory, CancellationToken ct)
+    {
+        // 셸 실행이라야 게임 프로세스와 따로 새 콘솔 창이 뜬다
+        var psi = new ProcessStartInfo(executable, arguments)
+        {
+            UseShellExecute = true,
+            WorkingDirectory = workingDirectory,
+        };
+        Process? process;
+        try
+        {
+            process = Process.Start(psi);
+        }
+        catch (Exception e)
+        {
+            throw new TranslationException($"로그인 창을 열지 못했습니다: {e.Message}", e);
+        }
+        if (process is null)
+            throw new TranslationException("로그인 창을 열지 못했습니다.");
+
+        using (process)
+            await process.WaitForExitAsync(ct);
+    }
+
     private static void KillQuietly(Process process)
     {
         try

@@ -30,7 +30,8 @@ public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator
 
     public string Name => "Codex CLI";
     public string ShortName => options.Model is { Length: > 0 } model ? $"Codex {model}" : "Codex";
-    public string NotReadyHint => "로그인 안 됨 — 터미널에서 'codex login'으로 로그인해 주세요";
+    public string NotReadyHint => "로그인 안 됨";
+    public bool CanLogin => true;
 
     private string Executable => _resolvedPath ??= CliLocation.Resolve(
         options.ExecutablePath, CodexCliLocator.Find,
@@ -43,6 +44,10 @@ public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator
             Executable, ["login", "status"], stdin: null, WorkDir, TimeSpan.FromSeconds(10), ct);
         return result.ExitCode == 0;
     }
+
+    /// <summary>codex login — 브라우저에서 ChatGPT 계정으로 로그인한다</summary>
+    public Task LoginAsync(CancellationToken ct = default) =>
+        CliRunner.RunInNewWindowAsync(Executable, "login", WorkDir, ct);
 
     public async Task<TranslationResult> TranslateAsync(
         string text,
@@ -122,7 +127,10 @@ public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator
         if (answer is null)
         {
             var reason = error ?? (stderr.Trim().Length > 0 ? stderr.Trim() : $"종료 코드 {exitCode}, 답 없음");
-            throw new TranslationException($"codex 오류: {(reason.Length <= 300 ? reason : reason[..300] + "…")}");
+            throw new TranslationException($"codex 오류: {(reason.Length <= 300 ? reason : reason[..300] + "…")}")
+            {
+                IsAuthError = AuthErrors.Matches(reason),
+            };
         }
 
         return new TranslationResult(AnswerJson.ExtractTranslation(answer), elapsed, input, output);

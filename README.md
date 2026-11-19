@@ -38,16 +38,18 @@
    irm https://claude.ai/install.ps1 | iex
    ```
    (npm을 쓰신다면 `npm install -g @anthropic-ai/claude-code` 도 됩니다.)
-2. PowerShell에서 `claude` 를 한 번 실행해 구독 계정으로 로그인합니다.
-3. 번역 도구 탭에서 **다시 확인**을 누르면 `Claude CLI 준비됨` 으로 바뀝니다.
+2. 상태 줄의 **로그인**을 누르면 새 창과 브라우저가 열립니다. 구독 계정으로 로그인합니다
+   (PowerShell에서 `claude auth login` 을 실행해도 같습니다).
+3. 창이 닫히면 자동으로 다시 확인해 `Claude CLI 준비됨` 으로 바뀝니다.
 
 설정: 모델(기본 `haiku` — 빠르고 사용량이 적어 권장), 생각 정도(effort), 제한 시간, 실행 파일 경로.
 
 ### Codex CLI
 
 1. [Codex CLI](https://developers.openai.com/codex/cli)를 설치합니다: `npm install -g @openai/codex`
-2. PowerShell에서 `codex login` 으로 로그인합니다.
-3. 번역 도구 탭에서 **다시 확인**을 누릅니다.
+2. 상태 줄의 **로그인**을 누르면 새 창과 브라우저가 열립니다. ChatGPT 계정으로 로그인합니다
+   (PowerShell에서 `codex login` 을 실행해도 같습니다).
+3. 창이 닫히면 자동으로 다시 확인해 `Codex CLI 준비됨` 으로 바뀝니다.
 
 설정: 모델(비우면 Codex 기본), 생각 정도(reasoning effort, 기본 `low`), 제한 시간, 실행 파일 경로.
 
@@ -93,7 +95,7 @@ LLM 도구(Claude·Codex·Ollama)는 번역 도구 탭의 **용어집**을 번�
 | 증상 | 해결 |
 | --- | --- |
 | `claude.exe를 찾지 못했습니다` / `codex.exe를 찾지 못했습니다` | 설치했는데도 나오면 번역 도구 탭의 **실행 파일** 칸에 경로를 직접 넣습니다. PowerShell에서 `(Get-Command claude).Source` 로 경로를 볼 수 있습니다 (npm으로 설치했다면 `.cmd` 가 아닌 실제 `.exe` 경로가 필요합니다 — 비워 두면 자동으로 찾습니다) |
-| `로그인 안 됨` | 터미널에서 로그인한 뒤 상태 글자나 **다시 확인**을 누릅니다. 게임을 다시 켤 필요는 없습니다 |
+| `로그인 안 됨` | 옆의 **로그인**을 눌러 로그인합니다. 로그인 전에 받은 최근 대화(10줄까지)는 로그인한 뒤 이어서 번역합니다. 쓰는 도중 로그인이 풀려도 같은 상태로 돌아가니 다시 로그인하면 됩니다 |
 | `Ollama에 연결하지 못했습니다` | Ollama가 켜져 있는지, 주소가 맞는지 확인합니다 |
 | 번역이 자주 `제한 시간` 으로 실패 | 번역 도구 탭에서 제한 시간을 늘립니다. Ollama는 처음 모델을 올릴 때 몇 초 더 걸립니다 |
 | 한글 입력 중 스페이스를 누르면 마지막 글자가 두 번 들어감 (`사` + 스페이스 → `사사`) | Windows 설정 › 시간 및 언어 › 언어 및 지역 › 한국어 › 언어 옵션 › Microsoft 입력기 › 호환성 › **이전 버전의 Microsoft IME 사용** 을 끄고 게임을 다시 켭니다 |

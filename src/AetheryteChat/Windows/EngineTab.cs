@@ -135,7 +135,8 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
     {
         Heading("준비");
         HelpText("Claude Pro·Max처럼 Claude Code를 쓸 수 있는 Claude 구독이 필요합니다. " +
-                 "Claude Code를 설치하고, 터미널(PowerShell)에서 claude 를 한 번 실행해 로그인한 뒤 위의 '다시 확인'을 누르세요.");
+                 "Claude Code를 설치한 뒤 위의 '로그인'을 누르면 새 창과 브라우저가 열려 구독 계정으로 로그인합니다 " +
+                 "(터미널의 claude auth login 과 같습니다). 창이 닫히면 자동으로 다시 확인합니다.");
         LinkButton("Claude Code 설치 안내 열기", ClaudeSetupUrl);
         HelpText("받은 채팅과 보낼 글(보낸 사람 이름은 빼고)이 Anthropic으로 전송되고, Claude 구독 사용량을 씁니다. " +
                  "사용량이 걱정되면 설정 탭의 '번역할 채널'을 줄여 주세요.");
@@ -153,7 +154,8 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
     {
         Heading("준비");
         HelpText("Codex를 쓸 수 있는 ChatGPT 구독(Plus·Pro 등)이 필요합니다. " +
-                 "Codex CLI를 설치하고, 터미널(PowerShell)에서 codex login 으로 로그인한 뒤 위의 '다시 확인'을 누르세요.");
+                 "Codex CLI를 설치한 뒤 위의 '로그인'을 누르면 새 창과 브라우저가 열려 ChatGPT 계정으로 로그인합니다 " +
+                 "(터미널의 codex login 과 같습니다). 창이 닫히면 자동으로 다시 확인합니다.");
         LinkButton("Codex CLI 설치 안내 열기", CodexSetupUrl);
         HelpText("받은 채팅과 보낼 글(보낸 사람 이름은 빼고)이 OpenAI로 전송되고, ChatGPT 구독 사용량을 씁니다. " +
                  "한 줄에 입력 약 1만5천 토큰을 써서 Claude보다 사용량이 훨씬 많습니다 — 설정 탭의 '번역할 채널'을 줄이는 것을 권합니다.");

@@ -30,7 +30,8 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
 
     public string Name => "Claude CLI";
     public string ShortName => $"Claude {options.Model}";
-    public string NotReadyHint => "로그인 안 됨 — 터미널에서 'claude'로 로그인해 주세요";
+    public string NotReadyHint => "로그인 안 됨";
+    public bool CanLogin => true;
 
     private string Executable => _resolvedPath ??= CliLocation.Resolve(
         options.ExecutablePath, ClaudeCliLocator.Find,
@@ -52,6 +53,10 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
             return false;
         }
     }
+
+    /// <summary>claude auth login — 브라우저에서 구독 계정으로 로그인한다</summary>
+    public Task LoginAsync(CancellationToken ct = default) =>
+        CliRunner.RunInNewWindowAsync(Executable, "auth login", WorkDir, ct);
 
     public async Task<TranslationResult> TranslateAsync(
         string text,
@@ -76,7 +81,10 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
             Executable, args, Prompts.WrapMessage(text), WorkDir, options.Timeout, ct);
 
         if (run.ExitCode != 0 && string.IsNullOrWhiteSpace(run.StdOut))
-            throw new TranslationException($"claude 종료 코드 {run.ExitCode}: {Trim(run.StdErr)}");
+            throw new TranslationException($"claude 종료 코드 {run.ExitCode}: {Trim(run.StdErr)}")
+            {
+                IsAuthError = AuthErrors.Matches(run.StdErr),
+            };
 
         return ParseEnvelope(run.StdOut, run.Elapsed);
     }
@@ -103,7 +111,12 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
             var resultText = root.TryGetProperty("result", out var r) ? r.GetString() ?? "" : "";
 
             if (root.TryGetProperty("is_error", out var isError) && isError.ValueKind == JsonValueKind.True)
-                throw new TranslationException($"claude 오류: {Trim(resultText)}");
+                throw new TranslationException($"claude 오류: {Trim(resultText)}")
+                {
+                    IsAuthError = AuthErrors.Matches(resultText)
+                        || (root.TryGetProperty("api_error_status", out var status) && status.ValueKind == JsonValueKind.Number
+                            && status.GetInt32() == 401),
+                };
 
             long? input = null, output = null;
             if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
