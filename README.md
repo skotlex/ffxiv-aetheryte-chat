@@ -183,6 +183,21 @@ dotnet run --project tools/TranslatorConsole -- ja2ko --glossary my-glossary.txt
 
 기본 용어집은 `src/AetheryteChat.Translation/default-glossary.txt` 입니다 (플러그인에 리소스로 들어갑니다).
 
+### 표본 기록 (개발용)
+
+기본 용어집을 키우려고 **개발자 본인의 게임 PC 에서만** 켜는 기록입니다. 설정 화면에는 없고, 게임을 끈 상태에서
+`%APPDATA%\XIVLauncher\pluginConfigs\AetheryteChat.json` 에 직접 적어야 켜집니다. 값이 없으면 아무것도 기록하지 않습니다.
+
+```jsonc
+"SampleLogDirectory": "C:\\Users\\<사용자>\\OneDrive\\AetheryteSamples"
+```
+
+- 그 폴더에 날짜별 `samples-YYYY-MM-DD.jsonl` 로 받은 채팅의 번역(`in`), 보낸 글(`out`), '오역 제보'(`flag`)를 남깁니다.
+  켜 두면 받은 채팅 창의 번역 줄을 오른쪽 클릭해 **오역 제보**를 할 수 있습니다.
+- 보낸 사람은 남기지 않고, 본문 속 플레이어 이름은 그 세션에서 본 이름(전체 이름, 3글자 이상인 이름·성)을 `<이름>` 으로 가립니다.
+  가타카나 애칭(タロさん 등)이나 한글로 옮긴 이름은 가리지 못합니다.
+- 다른 플레이어의 대화가 들어 있으므로 **저장소 밖에 두고 커밋하지 마세요**.
+
 ### 배포
 
 `v` 로 시작하는 태그(예: `v0.1.0.0`)를 올리면 GitHub Actions 가 빌드해 Release 에 `latest.zip` 을 올리고
