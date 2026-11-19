@@ -25,6 +25,9 @@ public sealed record OllamaLoadedModel(long Size, long SizeVram, DateTimeOffset?
     public bool PartlyOnCpu => GpuFraction < 0.95;
 }
 
+/// <summary>이 PC 에 권하는 모델과 그 근거가 된 그래픽카드 (Ollama 가 쓸 수 있는 카드가 없으면 null)</summary>
+public sealed record OllamaRecommendation(string Model, GpuAdapter? Gpu);
+
 /// <summary>
 /// 번역과 별개로 Ollama 모델을 다루는 일: 받기 전 크기·디스크 여유, 받기, GPU 에 올라간 상태, 내리기.
 /// 모델이 수 GB 라 받기 전에 크기를 알리고, 게임과 GPU 를 나눠 쓰므로 GPU 에 다 올라갔는지 보여 준다
@@ -35,6 +38,25 @@ public static class OllamaModels
 
     // 모델 받기는 수 분 걸릴 수 있어 HttpClient 기본 제한 시간(100초)을 쓰지 않는다. 멈추는 것은 취소로 한다
     private static readonly HttpClient PullHttp = new() { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
+
+    /// <summary>한↔일 게임 용어까지 맞게 옮긴 모델 (받을 때 약 8.2GB)</summary>
+    public const string LargeModel = "gemma3:12b";
+
+    /// <summary>GPU 없이 CPU 만으로도 쓸 만한 모델 (약 3.4GB). 더 작은 1b 는 번역을 제대로 하지 못했다</summary>
+    public const string SmallModel = "gemma3:4b";
+
+    // 12b 는 GPU 메모리를 약 9GB 쓰고 게임도 몇 GB 를 쓰므로, 12GB 카드부터 12b 를 권한다.
+    // 카드가 12GB 를 조금 못 미치게 알리는 경우가 있어 11.5GB 로 본다
+    private const long LargeModelGpuBytes = 23L << 29; // 11.5GB
+
+    /// <summary>
+    /// 이 PC 의 그래픽카드로 고른 권장 모델. Ollama 가 쓸 수 있는 카드(NVIDIA·AMD 외장)의 메모리가 12GB 이상이면 12b, 아니면 4b
+    /// </summary>
+    public static OllamaRecommendation RecommendForThisPc()
+    {
+        var gpu = GpuInfo.BestForOllama;
+        return new OllamaRecommendation(gpu?.MemoryBytes >= LargeModelGpuBytes ? LargeModel : SmallModel, gpu);
+    }
 
     private const string RegistryManifestAccept = "application/vnd.docker.distribution.manifest.v2+json";
 

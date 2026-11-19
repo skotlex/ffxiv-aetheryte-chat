@@ -24,7 +24,7 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
     [
         (TranslationEngine.Claude, "Claude CLI", "Claude 구독 필요 · 약 2초 · 게임 용어에 강합니다"),
         (TranslationEngine.Codex, "Codex CLI", "ChatGPT 구독 필요 · 약 5~6초 · 사용량을 많이 씁니다"),
-        (TranslationEngine.Ollama, "Ollama (로컬)", "무료 · GPU(VRAM 8GB 이상) 필요 · 약 1초"),
+        (TranslationEngine.Ollama, "Ollama (로컬)", "무료 · 이 PC에서 돌림 · GPU가 있으면 약 1초, 없으면 약 3초"),
         (TranslationEngine.Papago, "Papago (웹)", "무료 · 준비할 것 없음 · 막힐 수 있고 게임 용어에 약합니다"),
     ];
 
@@ -33,7 +33,10 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
     private const string OllamaDownloadUrl = "https://ollama.com/download";
 
     /// <summary>모델 목록에 늘 보이는 권장 모델 (GPU 가 넉넉할 때 / GPU 가 없거나 적을 때)</summary>
-    private static readonly string[] RecommendedOllamaModels = ["gemma3:12b", "gemma3:4b"];
+    private static readonly string[] RecommendedOllamaModels = [OllamaModels.LargeModel, OllamaModels.SmallModel];
+
+    /// <summary>이 PC 의 그래픽카드로 고른 권장 모델. 그래픽카드는 플러그인을 켜 있는 동안 바뀌지 않으므로 한 번만 정한다</summary>
+    private static readonly OllamaRecommendation ThisPc = OllamaModels.RecommendForThisPc();
 
     private static float InputWidth => 320 * ImGuiHelpers.GlobalScale;
     private static float TimeoutSliderWidth => 160 * ImGuiHelpers.GlobalScale;
@@ -197,11 +200,23 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
         var installed = _ollamaModels is { IsCompletedSuccessfully: true } t ? t.Result : [];
         // 목록에는 받아 둔 모델과 권장 모델을 함께 둔다 — 아직 아무것도 받지 않았어도 고를 수 있게
         var choices = installed.Concat(RecommendedOllamaModels.Where(r => !installed.Any(m => OllamaTranslator.SameModel(m, r)))).ToList();
-        if (DrawTextSetting("모델", "ollamaModel", new OllamaOptions().Model, s.Model, v => s.Model = v ?? "", choices))
+        // 이 PC 의 Ollama 일 때만 이 PC 의 그래픽카드로 권한다 (다른 PC 의 Ollama 면 그 PC 의 카드가 중요하다)
+        var local = OllamaModels.IsLocal(s.Endpoint);
+        var recommended = local ? ThisPc.Model : null;
+        if (DrawTextSetting("모델", "ollamaModel", recommended ?? OllamaModels.LargeModel, s.Model, v => s.Model = v ?? "", choices,
+                m => OllamaTranslator.SameModel(m, recommended ?? "") ? $"{m}  (이 PC 권장)" : m))
             ResetLoaded();
-        var isInstalled = DrawOllamaModelState(s, installed);
-        HelpText("GPU 메모리가 8GB 넘게 남으면 gemma3:12b(받을 때 약 8.2GB)를 권합니다 — 한↔일 게임 용어까지 맞게 옮긴 모델입니다. " +
-                 "GPU가 없거나 메모리가 적으면 gemma3:4b(약 3.4GB)를 쓰세요 — GPU 없이 CPU만으로도 한 줄에 약 3초, 처음 올릴 때 약 17초였습니다 " +
+        var isInstalled = DrawOllamaModelState(s, installed, recommended);
+        if (local)
+        {
+            HelpText(ThisPc.Gpu is { } gpu
+                ? $"이 PC의 그래픽카드: {gpu} → {ThisPc.Model}를 권합니다."
+                : $"이 PC에서 Ollama가 쓸 수 있는 그래픽카드(NVIDIA·AMD 외장)를 찾지 못해 CPU로 돌립니다 → {ThisPc.Model}를 권합니다." +
+                  (GpuInfo.Adapters.Count > 0 ? $" (찾은 그래픽: {string.Join(", ", GpuInfo.Adapters)})" : ""));
+        }
+        HelpText($"{OllamaModels.LargeModel}(받을 때 약 8.2GB)는 한↔일 게임 용어까지 맞게 옮깁니다. 그래픽카드 메모리가 12GB 이상일 때 권합니다 " +
+                 "(게임도 그래픽카드 메모리를 쓰므로). " +
+                 $"{OllamaModels.SmallModel}(약 3.4GB)는 GPU 없이 CPU만으로도 한 줄에 약 3초, 처음 올릴 때 약 17초였습니다 " +
                  "(내장 그래픽 노트북 실측). gemma3:1b 처럼 더 작은 모델은 번역을 제대로 하지 못했습니다.");
 
         if (isInstalled)
@@ -230,7 +245,7 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
     /// 모델 목록을 가져오는 중인지, 고른 모델을 받아 두었는지. 받아 두지 않았으면 크기·디스크 여유를 보여 주고 여기서 받을 수 있다.
     /// 받아 둔 모델이면 true
     /// </summary>
-    private bool DrawOllamaModelState(OllamaSettings s, IReadOnlyList<string> installed)
+    private bool DrawOllamaModelState(OllamaSettings s, IReadOnlyList<string> installed, string? recommended)
     {
         using var indent = ImRaii.PushIndent();
 
@@ -259,6 +274,9 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
         }
 
         WrappedText.Draw($"{s.Model} 모델을 아직 받지 않았습니다.", ErrorColor);
+        // 큰 모델을 이 PC 에서 돌리면 CPU 로 돌아 한 줄에 수십 초 걸릴 수 있다 — 받기 전에 알린다
+        if (OllamaTranslator.SameModel(s.Model, OllamaModels.LargeModel) && recommended == OllamaModels.SmallModel)
+            WrappedText.Draw($"이 PC의 그래픽카드로는 {s.Model}가 매우 느릴 수 있습니다 — {OllamaModels.SmallModel}를 권합니다.", ErrorColor);
 
         // 받기 전에 크기와 디스크 여유를 알린다 — 수 GB 라 모르고 받으면 디스크가 찰 수 있다
         if (!_downloadSizes.TryGetValue(s.Model, out var sizeTask))
@@ -725,7 +743,8 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
     /// 입력은 칸을 벗어날 때(또는 목록에서 고를 때) 저장하고 엔진을 다시 만든다 — 글자마다 다시 만들지 않게. 바꿨으면 true
     /// </summary>
     private bool DrawTextSetting(
-        string label, string id, string hint, string? value, Action<string?> set, IReadOnlyList<string>? presets = null)
+        string label, string id, string hint, string? value, Action<string?> set, IReadOnlyList<string>? presets = null,
+        Func<string, string>? describe = null)
     {
         ImGui.TextUnformatted(label);
         var changed = false;
@@ -748,7 +767,7 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
             {
                 foreach (var preset in presets)
                 {
-                    if (ImGui.Selectable(preset, preset == value) && preset != value)
+                    if (ImGui.Selectable(describe?.Invoke(preset) ?? preset, preset == value) && preset != value)
                     {
                         set(preset);
                         Apply();

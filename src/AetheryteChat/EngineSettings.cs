@@ -64,7 +64,8 @@ public sealed class OllamaSettings
 
     public string Endpoint { get; set; } = Defaults.Endpoint;
 
-    public string Model { get; set; } = Defaults.Model;
+    /// <summary>처음에는 이 PC 의 그래픽카드에 맞는 권장 모델 (메모리 12GB 이상이면 gemma3:12b, 아니면 gemma3:4b)</summary>
+    public string Model { get; set; } = OllamaModels.RecommendForThisPc().Model;
 
     /// <summary>번역 사이에 모델을 VRAM 에 올려 두는 시간 (Ollama 형식: 30m, 1h, -1 = 계속)</summary>
     public string KeepAlive { get; set; } = Defaults.KeepAlive;
@@ -77,7 +78,7 @@ public sealed class OllamaSettings
     internal OllamaOptions ToOptions(string glossary) => new()
     {
         Endpoint = EngineSettings.OrNull(Endpoint) ?? Defaults.Endpoint,
-        Model = EngineSettings.OrNull(Model) ?? Defaults.Model,
+        Model = EngineSettings.OrNull(Model) ?? OllamaModels.RecommendForThisPc().Model,
         KeepAlive = EngineSettings.OrNull(KeepAlive) ?? Defaults.KeepAlive,
         Preload = PreloadOnCheck,
         Timeout = EngineSettings.Timeout(TimeoutSeconds),

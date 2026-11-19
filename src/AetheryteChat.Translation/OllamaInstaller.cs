@@ -2,7 +2,6 @@ using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
-using Microsoft.Win32;
 
 namespace AetheryteChat.Translation;
 
@@ -82,34 +81,7 @@ public static class OllamaInstaller
     /// 내장 그래픽(Radeon 760M Graphics, Radeon(TM) Graphics 등)은 Ollama 가 대부분 쓰지 못해(2026-11-19 760M 확인) 빼고,
     /// 이름에 RX·PRO 가 든 외장 카드만 센다
     /// </summary>
-    public static bool HasAmdGpu()
-    {
-        if (!OperatingSystem.IsWindows())
-            return false;
-        try
-        {
-            // 디스플레이 어댑터 장치 클래스
-            using var display = Registry.LocalMachine.OpenSubKey(
-                @"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}");
-            if (display is null)
-                return false;
-            foreach (var name in display.GetSubKeyNames())
-            {
-                using var adapter = display.OpenSubKey(name);
-                var desc = adapter?.GetValue("DriverDesc") as string ?? "";
-                var isAmd = desc.Contains("AMD", StringComparison.OrdinalIgnoreCase) || desc.Contains("Radeon", StringComparison.OrdinalIgnoreCase);
-                var isDiscrete = desc.Contains(" RX ", StringComparison.OrdinalIgnoreCase) || desc.Contains(" PRO ", StringComparison.OrdinalIgnoreCase)
-                                 || desc.EndsWith(" PRO", StringComparison.OrdinalIgnoreCase);
-                if (isAmd && isDiscrete)
-                    return true;
-            }
-        }
-        catch (Exception e) when (e is System.Security.SecurityException or UnauthorizedAccessException or IOException)
-        {
-            // 못 읽으면 없는 것으로 본다
-        }
-        return false;
-    }
+    public static bool HasAmdGpu() => GpuInfo.Adapters.Any(a => a.IsAmdDiscrete);
 
     /// <summary>
     /// 받기·검증·풀기까지 하고 새 폴더를 돌려준다. 아직 쓰지는 않는다 — 서버를 끈 뒤 <see cref="Activate"/> 로 바꿔 끼운다
