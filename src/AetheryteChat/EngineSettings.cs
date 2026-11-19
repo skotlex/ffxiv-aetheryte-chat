@@ -45,6 +45,8 @@ public sealed class CodexSettings
 
     public string ReasoningEffort { get; set; } = Defaults.ReasoningEffort;
 
+    public bool Lightweight { get; set; } = Defaults.Lightweight;
+
     public int TimeoutSeconds { get; set; } = (int)Defaults.Timeout.TotalSeconds;
 
     internal CodexCliOptions ToOptions(string glossary) => new()
@@ -52,6 +54,7 @@ public sealed class CodexSettings
         ExecutablePath = EngineSettings.OrNull(ExecutablePath),
         Model = EngineSettings.OrNull(Model),
         ReasoningEffort = EngineSettings.OrNull(ReasoningEffort) ?? Defaults.ReasoningEffort,
+        Lightweight = Lightweight,
         Timeout = EngineSettings.Timeout(TimeoutSeconds),
         Glossary = glossary,
     };

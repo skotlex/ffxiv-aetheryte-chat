@@ -23,7 +23,7 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
     private static readonly (TranslationEngine Engine, string Name, string Description)[] Engines =
     [
         (TranslationEngine.Claude, "Claude CLI", "Claude 구독 필요 · 약 2초 · 게임 용어에 강합니다"),
-        (TranslationEngine.Codex, "Codex CLI", "ChatGPT 구독 필요 · 약 5~6초 · 사용량을 많이 씁니다"),
+        (TranslationEngine.Codex, "Codex CLI", "ChatGPT 구독 필요 · 약 4~5초, 가끔 15초 넘게 걸립니다"),
         (TranslationEngine.Ollama, "Ollama (로컬)", "무료 · 이 PC에서 돌림 · GPU가 있으면 약 1초, 없으면 약 3초"),
         (TranslationEngine.Papago, "Papago (웹)", "무료 · 준비할 것 없음 · 막힐 수 있고 게임 용어에 약합니다"),
     ];
@@ -174,10 +174,21 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
                  "(터미널의 codex login 과 같습니다). 창이 닫히면 자동으로 다시 확인합니다.");
         LinkButton("Codex CLI 설치 안내 열기", CodexSetupUrl);
         HelpText("받은 채팅과 보낼 글(보낸 사람 이름은 빼고)이 OpenAI로 전송되고, ChatGPT 구독 사용량을 씁니다. " +
-                 "한 줄에 입력 약 1만5천 토큰을 써서 Claude보다 사용량이 훨씬 많습니다 — 설정 탭의 '번역할 채널'을 줄이는 것을 권합니다.");
+                 "경량 모드는 코딩용 지침과 도구를 줄여 입력 토큰을 절약합니다. 같은 문구는 최근 256개까지 메모리에 보관해 재요청 없이 번역합니다.");
 
         ImGuiHelpers.ScaledDummy(6);
         DrawExecutable("codex", "codex.exe", s.ExecutablePath, v => s.ExecutablePath = v, ref _codexFound, CodexCliLocator.Find);
+        var lightweight = s.Lightweight;
+        if (ImGui.Checkbox("경량 번역 (권장)", ref lightweight))
+        {
+            s.Lightweight = lightweight;
+            Apply();
+        }
+        HelpText($"Codex CLI {CodexCliTranslator.LightweightMinVersion.ToString(3)} 이상에서 쓰고, 이전 CLI면 자동으로 기존 방식으로 번역합니다. " +
+                 "개인 Codex 설정(config.toml)을 읽지 않으며 로그인은 그대로 사용합니다. " +
+                 "사용할 모델은 아래에 지정하세요. 개인 설정이 필요하면 경량 번역을 끄세요.");
+        if (s.Lightweight && Queue.Translator is CodexCliTranslator { LightweightOffReason: { } reason })
+            WrappedText.Draw(reason, ErrorColor);
         DrawTextSetting("모델", "codexModel", "비우면 Codex 기본 모델", s.Model, v => s.Model = v, []);
         DrawChoice("생각 정도 (reasoning effort)", "codexEffort", s.ReasoningEffort, v => s.ReasoningEffort = v ?? "low",
             [("low", "low (권장)"), ("medium", "medium"), ("high", "high")]);

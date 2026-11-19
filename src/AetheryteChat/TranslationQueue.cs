@@ -70,6 +70,9 @@ internal sealed partial class TranslationQueue : IDisposable
     public string? StatusDetail { get; private set; }
     public bool AutoTranslate { get; set; } = true;
     public string EngineName => _translator.Name;
+
+    /// <summary>지금 엔진. 번역 도구 탭이 엔진별 상태(예: Codex 경량 번역을 쓰는지)를 보여 줄 때 쓴다</summary>
+    public ITranslator Translator => _translator;
     public string NotReadyHint => _translator.NotReadyHint;
 
     /// <summary>지금 도구가 플러그인에서 로그인 창을 띄울 수 있는지 (Claude·Codex CLI)</summary>
