@@ -27,8 +27,11 @@ internal sealed partial class TranslationQueue : IDisposable
     private readonly SemaphoreSlim _slots = new(MaxConcurrent);
     private readonly CancellationTokenSource _cts = new();
 
+    // 보낸 글은 보통 1초 안에 받은 채팅으로 돌아온다. 돌아오지 않은 기록(서버가 받지 않음 등)이 한참 뒤
+    // 남이 쓴 같은 문장에 붙지 않게, 이 시간이 지나면 버린다
+    private static readonly TimeSpan SentLifetime = TimeSpan.FromSeconds(60);
     private const int MaxRememberedSent = 20;
-    private readonly OrderedDictionary<string, string> _sent = new(); // 보낸 일본어 → 한국어 원문
+    private readonly List<SentText> _sent = []; // 보낸 순서. 같은 문장을 두 번 보내면 두 개가 따로 남는다
 
     // 지금 엔진의 로그인 확인 — 엔진을 바꾼 직후의 다시 번역이 확인이 끝나기를 기다린다
     private Task _loginCheck;
@@ -252,24 +255,43 @@ internal sealed partial class TranslationQueue : IDisposable
         }
     }
 
-    /// <summary>보낸 일본어와 그 한국어 원문을 기억한다. 받은 채팅에 같은 글이 오면 한 번 쓰고 지운다.</summary>
-    public void RememberSent(string japanese, string korean)
+    /// <summary>보낸 글 하나의 기록</summary>
+    public sealed record SentText(string Japanese, string Korean, DateTime Expires);
+
+    /// <summary>
+    /// 보낸 일본어와 그 한국어 원문을 기억한다. 받은 채팅에 같은 글이 오면 한 번 쓰고 지운다.
+    /// 게임에 넘기기 전에 부른다 — 돌아오는 글이 기록보다 먼저 오지 않게. 보내지 못했으면 돌려받은 값으로 <see cref="ForgetSent"/> 한다
+    /// </summary>
+    public SentText RememberSent(string japanese, string korean)
     {
+        var sent = new SentText(japanese, korean, DateTime.UtcNow + SentLifetime);
         lock (_sent)
         {
-            _sent.Remove(japanese);
-            _sent.Add(japanese, korean);
-            while (_sent.Count > MaxRememberedSent)
+            _sent.Add(sent);
+            if (_sent.Count > MaxRememberedSent)
                 _sent.RemoveAt(0);
         }
+        return sent;
+    }
+
+    /// <summary>보내지 못한 글의 기록을 지운다 — 나중에 남이 쓴 같은 문장을 내 글로 보지 않게</summary>
+    public void ForgetSent(SentText sent)
+    {
+        lock (_sent)
+            _sent.Remove(sent);
     }
 
     private string? TakeSent(string message)
     {
+        var now = DateTime.UtcNow;
         lock (_sent)
         {
-            if (!_sent.Remove(message, out var korean))
+            _sent.RemoveAll(s => s.Expires < now);
+            var index = _sent.FindIndex(s => s.Japanese == message);
+            if (index < 0)
                 return null;
+            var korean = _sent[index].Korean;
+            _sent.RemoveAt(index);
             return korean;
         }
     }

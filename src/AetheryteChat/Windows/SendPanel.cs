@@ -1,3 +1,4 @@
+using AetheryteChat.Translation;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
@@ -12,7 +13,8 @@ namespace AetheryteChat.Windows;
 /// </summary>
 internal sealed class SendPanel(Plugin plugin)
 {
-    // 상태. 번역·전송 결과는 백그라운드에서 채워진다 (문자열 대입이라 UI 스레드에서 읽어도 안전)
+    // 상태. 그리는 쪽(게임 스레드)만 읽고 쓴다 — 번역·전송이 끝나면 결과를 게임 스레드로 넘겨 한꺼번에 반영한다.
+    // 백그라운드에서 여러 필드를 하나씩 바꾸면 그 사이에 입력을 비우거나 새 번역을 시작했을 때 이전 결과와 섞인다
     private string _koreanInput = "";
     private string _translatedFrom = ""; // 지금 일본어를 만든 한국어 — 입력이 이와 다르면 다시 번역해야 한다
     private string _japanese = "";
@@ -21,7 +23,7 @@ internal sealed class SendPanel(Plugin plugin)
     private int _requestId;              // 새 번역을 시작하면 늘린다 — 늦게 끝난 이전 결과를 버리는 데 쓴다
     private string _channelKey = SendChannel.AutoKey; // 기본: 게임 입력창의 현재 채널
     private string _tellTarget = "";
-    private volatile bool _busy;         // 번역 또는 전송 중. 뜻 확인은 보내기를 막지 않는다
+    private bool _busy;                  // 번역 또는 전송 중. 뜻 확인은 보내기를 막지 않는다
     private string _sendStatus = "";
     private bool _sendStatusIsError;
 
@@ -165,46 +167,54 @@ internal sealed class SendPanel(Plugin plugin)
         SetStatus("번역 중…", false);
 
         plugin.TranslationQueue.TranslateOutgoingAsync(korean).ContinueWith(t =>
-        {
-            // 결과를 버리는 경우(그사이 입력칸을 비움)에도 '번역 중' 은 풀어야 다음 번역을 할 수 있다.
-            // 번역 중에는 새 번역을 시작할 수 없으므로 여기서 풀어도 다른 번역의 상태를 건드리지 않는다
-            _busy = false;
-            if (id != _requestId)
-                return;
+            Plugin.Framework.RunOnFrameworkThread(() => OnTranslated(id, korean, t)));
+    }
 
-            if (t.IsCompletedSuccessfully)
-            {
-                _translatedFrom = korean;
-                _japanese = t.Result.Text;
-                SetStatus("", false); // '번역 중…' 을 지운다. 결과는 '보낼 일본어' 줄이 보여 준다
-                CheckMeaning(id, _japanese);
-            }
-            else if (!t.IsCanceled)
-            {
-                SetStatus($"번역 실패: {t.Exception?.InnerException?.Message}", true);
-            }
-        });
+    /// <summary>게임 스레드에서 불린다</summary>
+    private void OnTranslated(int id, string korean, Task<TranslationResult> t)
+    {
+        // 결과를 버리는 경우(그사이 입력칸을 비움)에도 '번역 중' 은 풀어야 다음 번역을 할 수 있다.
+        // 번역 중에는 새 번역을 시작할 수 없으므로 여기서 풀어도 다른 번역의 상태를 건드리지 않는다
+        _busy = false;
+        if (id != _requestId)
+            return;
+
+        if (t.IsCompletedSuccessfully)
+        {
+            _translatedFrom = korean;
+            _japanese = t.Result.Text;
+            SetStatus("", false); // '번역 중…' 을 지운다. 결과는 '보낼 일본어' 줄이 보여 준다
+            CheckMeaning(id, _japanese);
+        }
+        else if (!t.IsCanceled)
+        {
+            SetStatus($"번역 실패: {t.Exception?.InnerException?.Message}", true);
+        }
     }
 
     private void CheckMeaning(int id, string japanese)
     {
         _backState = TranslationState.Pending;
         plugin.TranslationQueue.TranslateBackAsync(japanese).ContinueWith(t =>
-        {
-            if (id != _requestId)
-                return;
+            Plugin.Framework.RunOnFrameworkThread(() => OnMeaningChecked(id, t)));
+    }
 
-            if (t.IsCompletedSuccessfully)
-            {
-                _back = t.Result.Text;
-                _backState = TranslationState.Done;
-            }
-            else if (!t.IsCanceled)
-            {
-                _back = t.Exception?.InnerException?.Message ?? "";
-                _backState = TranslationState.Failed;
-            }
-        });
+    /// <summary>게임 스레드에서 불린다</summary>
+    private void OnMeaningChecked(int id, Task<TranslationResult> t)
+    {
+        if (id != _requestId)
+            return;
+
+        if (t.IsCompletedSuccessfully)
+        {
+            _back = t.Result.Text;
+            _backState = TranslationState.Done;
+        }
+        else if (!t.IsCanceled)
+        {
+            _back = t.Exception?.InnerException?.Message ?? "";
+            _backState = TranslationState.Failed;
+        }
     }
 
     /// <summary>채널 목록을 그리고 고른 채널을 돌려준다. 귓속말이면 받는 사람 칸도 그린다.</summary>
@@ -272,23 +282,28 @@ internal sealed class SendPanel(Plugin plugin)
         _busy = true;
         SetStatus("보내는 중…", false);
         // 받은 채팅에 돌아오는 내 글은 다시 번역하지 않고 한국어 원문을 보여 준다
-        plugin.TranslationQueue.RememberSent(japanese, korean);
+        var sent = plugin.TranslationQueue.RememberSent(japanese, korean);
         Plugin.Framework.RunOnFrameworkThread(() => ChatSender.Send(prefix, japanese))
-            .ContinueWith(t =>
-            {
-                if (t.Exception?.InnerException is { } e)
-                {
-                    SetStatus($"보내기 실패: {e.Message}", true);
-                    Plugin.Log.Warning(e, "채팅 보내기 실패");
-                }
-                else
-                {
-                    // 보낸 글은 받은 채팅에 [내가 쓴 글] 로 돌아오므로 알림 줄 없이 처음 크기로 돌아간다
-                    _koreanInput = "";
-                    Reset();
-                }
-                _busy = false;
-            });
+            .ContinueWith(t => Plugin.Framework.RunOnFrameworkThread(() => OnSent(t, sent)));
+    }
+
+    /// <summary>게임 스레드에서 불린다</summary>
+    private void OnSent(Task t, TranslationQueue.SentText sent)
+    {
+        if (t.Exception?.InnerException is { } e)
+        {
+            // 보내지 못한 글이 나중에 남이 쓴 같은 문장에 [내가 쓴 글] 로 붙지 않게 기록을 지운다
+            plugin.TranslationQueue.ForgetSent(sent);
+            SetStatus($"보내기 실패: {e.Message}", true);
+            Plugin.Log.Warning(e, "채팅 보내기 실패");
+        }
+        else
+        {
+            // 보낸 글은 받은 채팅에 [내가 쓴 글] 로 돌아오므로 알림 줄 없이 처음 크기로 돌아간다
+            _koreanInput = "";
+            Reset();
+        }
+        _busy = false;
     }
 
     /// <summary>번역·뜻 확인·안내가 남아 있는지</summary>
