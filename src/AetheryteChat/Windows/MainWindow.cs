@@ -23,6 +23,10 @@ internal sealed class MainWindow : StyledWindow, IDisposable
     // 지난 프레임에 잰 보내기 묶음의 높이 — 받은 채팅 로그가 그만큼 비켜 준다 (보내기 높이는 번역 확인 줄에 따라 바뀐다)
     private float _sendPanelHeight;
 
+    // '오역 제보' 메뉴를 연 번역. 줄이 밀려나도 메뉴가 다른 줄을 가리키지 않게 줄 순서가 아니라 대상을 기억한다
+    private (ChatLine Line, LineTranslation Translation)? _reportTarget;
+    private const string ReportPopupId = "##reportTranslation";
+
     public MainWindow(Plugin plugin) : base(plugin, "Aetheryte Chat##main")
     {
         SizeConstraints = new WindowSizeConstraints
@@ -130,7 +134,7 @@ internal sealed class MainWindow : StyledWindow, IDisposable
                         WrappedText.Draw($"… [{t.Engine}] 번역 중", DimColor);
                         break;
                     case TranslationState.Done:
-                        WrappedText.Draw($"→ [{t.Engine}] {t.Result}", TranslationColor);
+                        DrawDoneTranslation(line, t);
                         break;
                     case TranslationState.Failed:
                         WrappedText.Draw($"[{t.Engine}] 번역 실패: {t.Result}", ErrorColor);
@@ -142,9 +146,47 @@ internal sealed class MainWindow : StyledWindow, IDisposable
             }
         }
 
+        DrawReportPopup();
+
         // 맨 아래에 있으면 새 줄을 따라간다
         if (ImGui.GetScrollY() >= ImGui.GetScrollMaxY())
             ImGui.SetScrollHereY(1.0f);
+    }
+
+    /// <summary>
+    /// 끝난 번역 한 줄. 개발용 표본 기록을 켰으면 오른쪽 클릭으로 '오역 제보' 메뉴를 연다 (기록을 끈 사용자에게는 메뉴가 없다)
+    /// </summary>
+    private void DrawDoneTranslation(ChatLine line, LineTranslation t)
+    {
+        var text = $"→ [{t.Engine}] {t.Result}{(t.Reported ? "  (오역 제보함)" : "")}";
+        if (!Owner.SampleLog.Enabled || t.IsOwnText)
+        {
+            WrappedText.Draw(text, TranslationColor);
+            return;
+        }
+
+        using (ImRaii.Group())
+            WrappedText.Draw(text, TranslationColor);
+        if (ImGui.IsItemHovered() && ImGui.IsMouseReleased(ImGuiMouseButton.Right))
+        {
+            _reportTarget = (line, t);
+            ImGui.OpenPopup(ReportPopupId);
+        }
+    }
+
+    private void DrawReportPopup()
+    {
+        using var popup = ImRaii.Popup(ReportPopupId);
+        if (!popup.Success || _reportTarget is not var (line, t))
+            return;
+        using (ImRaii.Disabled(t.Reported))
+        {
+            if (ImGui.Selectable(t.Reported ? "오역 제보함" : "오역 제보"))
+            {
+                Owner.SampleLog.Flag(line.Channel, line.Message, t.Engine, t.Result ?? "");
+                t.Reported = true;
+            }
+        }
     }
 
     private static readonly (SendPanelPlacement Placement, string Label)[] Placements =

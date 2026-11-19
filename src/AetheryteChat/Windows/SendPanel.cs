@@ -18,6 +18,7 @@ internal sealed class SendPanel(Plugin plugin)
     private string _koreanInput = "";
     private string _translatedFrom = ""; // 지금 일본어를 만든 한국어 — 입력이 이와 다르면 다시 번역해야 한다
     private string _japanese = "";
+    private string _engine = "";         // 지금 일본어를 만든 도구 (표본 기록용)
     private string _back = "";           // 일본어를 다시 한국어로 옮긴 것 (뜻 확인용)
     private TranslationState _backState = TranslationState.None;
     private int _requestId;              // 새 번역을 시작하면 늘린다 — 늦게 끝난 이전 결과를 버리는 데 쓴다
@@ -76,7 +77,7 @@ internal sealed class SendPanel(Plugin plugin)
         using (ImRaii.Disabled(!canSend))
         {
             if (ImGui.Button("보내기") && canSend)
-                Send(channel.Label, prefix);
+                Send(channel.Key, prefix);
         }
         var enterHint = canSend ? "Enter: 보내기" : "Enter: 번역";
         Layout.SameLineIfFits(Layout.TextWidth(enterHint));
@@ -85,7 +86,7 @@ internal sealed class SendPanel(Plugin plugin)
         if (enter)
         {
             if (canSend)
-                Send(channel.Label, prefix);
+                Send(channel.Key, prefix);
             else if (canTranslate)
                 Translate(korean);
         }
@@ -161,6 +162,7 @@ internal sealed class SendPanel(Plugin plugin)
     {
         var id = ++_requestId;
         _busy = true;
+        _engine = plugin.TranslationQueue.Translator.ShortName;
         _japanese = "";
         _back = "";
         _backState = TranslationState.None;
@@ -275,7 +277,7 @@ internal sealed class SendPanel(Plugin plugin)
         return selected;
     }
 
-    private void Send(string channelLabel, string prefix)
+    private void Send(string channelKey, string prefix)
     {
         var japanese = _japanese.Trim();
         var korean = _translatedFrom;
@@ -284,12 +286,16 @@ internal sealed class SendPanel(Plugin plugin)
         // 받은 채팅에 돌아오는 내 글은 다시 번역하지 않고 한국어 원문을 보여 준다
         var sent = plugin.TranslationQueue.RememberSent(japanese, korean);
         Plugin.Framework.RunOnFrameworkThread(() => ChatSender.Send(prefix, japanese))
-            .ContinueWith(t => Plugin.Framework.RunOnFrameworkThread(() => OnSent(t, sent)));
+            .ContinueWith(t => Plugin.Framework.RunOnFrameworkThread(() => OnSent(t, sent, channelKey)));
     }
 
     /// <summary>게임 스레드에서 불린다</summary>
-    private void OnSent(Task t, TranslationQueue.SentText sent)
+    private void OnSent(Task t, TranslationQueue.SentText sent, string channelKey)
     {
+        // 다시 옮긴 한국어가 아직 안 나왔으면 비워 남긴다 (기다리지 않고 보낼 수 있다)
+        plugin.SampleLog.Outgoing(SampleLog.SendChannelName(channelKey), sent.Korean, sent.Japanese,
+            _backState == TranslationState.Done ? _back : null, _engine, sent: t.Exception is null);
+
         if (t.Exception?.InnerException is { } e)
         {
             // 보내지 못한 글이 나중에 남이 쓴 같은 문장에 [내가 쓴 글] 로 붙지 않게 기록을 지운다

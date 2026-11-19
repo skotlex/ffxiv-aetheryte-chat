@@ -86,6 +86,12 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public HashSet<TranslateChannelGroup> DisabledTranslateChannels { get; set; } = [];
 
+    /// <summary>
+    /// 개발용: 번역 품질 개선용 표본 기록을 남길 폴더 (<see cref="SampleLog"/>). 설정 화면에는 없고 설정 파일에 직접 적는다.
+    /// 비어 있으면 아무것도 기록하지 않는다
+    /// </summary>
+    public string? SampleLogDirectory { get; set; }
+
     /// <summary>보내기 위치. 기본은 받은 채팅 아래</summary>
     public SendPanelPlacement SendPanelPlacement { get; set; } = SendPanelPlacement.BelowChat;
 

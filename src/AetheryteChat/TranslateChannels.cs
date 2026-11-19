@@ -59,6 +59,10 @@ internal static class TranslateChannels
     public static bool IsAmbient(XivChatType channel) =>
         channel is XivChatType.Say or XivChatType.Yell or XivChatType.Shout or XivChatType.NoviceNetwork;
 
+    /// <summary>채널이 속한 묶음. 묶음에 없는 채널이면 null</summary>
+    public static TranslateChannelGroup? GroupFor(XivChatType channel) =>
+        GroupOf.TryGetValue(channel, out var group) ? group : null;
+
     /// <summary>이 채널의 대화를 번역할지. 묶음에 없는 채널은 번역하지 않는다</summary>
     public static bool IsEnabled(Configuration config, XivChatType channel) =>
         GroupOf.TryGetValue(channel, out var group) && !config.DisabledTranslateChannels.Contains(group);

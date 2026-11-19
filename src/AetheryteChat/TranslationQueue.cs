@@ -56,9 +56,13 @@ internal sealed partial class TranslationQueue : IDisposable
     private const int MaxBacklog = MaxWaiting; // 준비되면 한꺼번에 대기열에 넣으므로, 넣자마자 건너뛰는 줄이 없게 맞춘다
     private readonly List<ChatLine> _backlog = [];
 
-    public TranslationQueue(Func<ITranslator> createTranslator, Func<XivChatType, bool> isChannelEnabled)
+    // 개발용 표본 기록 (꺼져 있으면 아무것도 하지 않는다)
+    private readonly SampleLog _sampleLog;
+
+    public TranslationQueue(Func<ITranslator> createTranslator, Func<XivChatType, bool> isChannelEnabled, SampleLog sampleLog)
     {
         _createTranslator = createTranslator;
+        _sampleLog = sampleLog;
         _translator = createTranslator();
         _isChannelEnabled = isChannelEnabled;
         _loginCheck = CheckLoginAsync(_translator, ++_loginCheckId);
@@ -419,6 +423,7 @@ internal sealed partial class TranslationQueue : IDisposable
             }
             var result = await translator.TranslateAsync(line.Message, TranslationDirection.JaToKo, ct);
             target.Complete(TranslationState.Done, result.Text);
+            _sampleLog.Incoming(line.Channel, line.Message, translator.ShortName, done: true, result.Text);
         }
         catch (OperationCanceledException)
         {
@@ -433,6 +438,7 @@ internal sealed partial class TranslationQueue : IDisposable
         catch (TranslationException e)
         {
             target.Complete(TranslationState.Failed, e.Message);
+            _sampleLog.Incoming(line.Channel, line.Message, translator.ShortName, done: false, null);
             // 채팅 내용이 로그 파일에 남지 않게 원인 메시지는 창에만 보여 준다
             Plugin.Log.Warning("받은 채팅 번역 실패");
         }

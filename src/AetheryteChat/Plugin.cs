@@ -16,6 +16,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IFramework Framework { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
     [PluginService] internal static IGameConfig GameConfig { get; private set; } = null!;
+    [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
 
     private const string CommandName = "/achat";
 
@@ -25,6 +26,9 @@ public sealed class Plugin : IDalamudPlugin
     internal Configuration Configuration { get; }
     internal ChatListener ChatListener { get; }
     internal TranslationQueue TranslationQueue { get; }
+
+    /// <summary>개발용 표본 기록. 설정 파일에 SampleLogDirectory 를 적었을 때만 켜진다</summary>
+    internal SampleLog SampleLog { get; }
 
     /// <summary>이 PC 의 Ollama 켜고 끄기·설치</summary>
     internal OllamaHost OllamaHost { get; }
@@ -50,8 +54,10 @@ public sealed class Plugin : IDalamudPlugin
         WindowFont = new WindowFont(PluginInterface.UiBuilder.FontAtlas, Configuration.WindowFont);
 
         OllamaHost = new OllamaHost(PluginInterface.GetPluginConfigDirectory());
-        TranslationQueue = new TranslationQueue(CreateTranslator, channel => TranslateChannels.IsEnabled(Configuration, channel));
-        ChatListener = new ChatListener(ChatGui, TranslationQueue.Enqueue);
+        SampleLog = new SampleLog(Configuration.SampleLogDirectory);
+        TranslationQueue = new TranslationQueue(
+            CreateTranslator, channel => TranslateChannels.IsEnabled(Configuration, channel), SampleLog);
+        ChatListener = new ChatListener(ChatGui, OnChatLine, SampleLog.RememberName);
         SendPanel = new SendPanel(this);
         _mainWindow = new MainWindow(this);
         SendWindow = new SendWindow(this);
@@ -67,6 +73,14 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi += ToggleWindows;
         // 플러그인 목록의 설정(톱니) 버튼 — 번역 도구 탭을 연다
         PluginInterface.UiBuilder.OpenConfigUi += _mainWindow.OpenEngineTab;
+    }
+
+    /// <summary>받은 채팅 한 줄 (게임 스레드). 표본 기록을 켰으면 내 캐릭터 이름도 가리게 기억해 둔다</summary>
+    private void OnChatLine(ChatLine line)
+    {
+        if (SampleLog.Enabled)
+            SampleLog.RememberName(PlayerState.CharacterName);
+        TranslationQueue.Enqueue(line);
     }
 
     /// <summary>받은 채팅 창을 열고 닫는다. 보내기가 별도 창이면 그 창도 같이 열고 닫는다</summary>
@@ -135,6 +149,7 @@ public sealed class Plugin : IDalamudPlugin
         _mainWindow.Dispose();
         ChatListener.Dispose();
         TranslationQueue.Dispose();
+        SampleLog.Dispose(); // 받은 채팅·번역이 멈춘 뒤 남은 기록을 쓴다
         UnloadOllamaModel();
         OllamaHost.Dispose();
         WindowFont.Dispose();

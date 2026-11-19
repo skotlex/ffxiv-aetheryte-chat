@@ -35,6 +35,9 @@ internal sealed class LineTranslation(string engine, bool isOwnText = false)
     /// <summary>Done 이면 번역문, Failed 면 실패 이유</summary>
     public string? Result { get; private set; }
 
+    /// <summary>'오역 제보' 를 했는지 (받은 채팅 창에서 한 번만 제보하게). UI 스레드만 쓴다</summary>
+    public bool Reported { get; set; }
+
     public void Complete(TranslationState state, string result)
     {
         Result = result;
@@ -83,7 +86,8 @@ internal sealed class ChatLine(DateTime time, XivChatType channel, string sender
 }
 
 /// <summary>
-/// 플레이어 대화 채널만 받아 최근 줄을 메모리에 둔다. 다른 플레이어의 대화이므로 파일에 남기지 않는다.
+/// 플레이어 대화 채널만 받아 최근 줄을 메모리에 둔다. 다른 플레이어의 대화이므로 파일에 남기지 않는다 —
+/// 개발자가 설정 파일에 SampleLogDirectory 를 직접 적었을 때만 <see cref="SampleLog"/> 가 이름을 가려 남긴다.
 /// </summary>
 internal sealed class ChatListener : IDisposable
 {
@@ -94,14 +98,17 @@ internal sealed class ChatListener : IDisposable
 
     private readonly IChatGui _chatGui;
     private readonly Action<ChatLine> _onLine;
+    private readonly Action<string>? _onPlayerName;
     private readonly Lock _lock = new();
     private readonly LinkedList<ChatLine> _lines = new();
 
     /// <param name="onLine">새 줄이 들어올 때 게임 스레드에서 불린다. 오래 걸리는 일을 하면 안 된다.</param>
-    public ChatListener(IChatGui chatGui, Action<ChatLine> onLine)
+    /// <param name="onPlayerName">보낸 사람의 이름('이름 성', 서버 빼고)을 알게 될 때 게임 스레드에서 불린다 (표본 기록의 이름 가리기)</param>
+    public ChatListener(IChatGui chatGui, Action<ChatLine> onLine, Action<string>? onPlayerName = null)
     {
         _chatGui = chatGui;
         _onLine = onLine;
+        _onPlayerName = onPlayerName;
         _chatGui.ChatMessageUnhandled += OnChatMessage;
     }
 
@@ -144,7 +151,7 @@ internal sealed class ChatListener : IDisposable
     /// PlayerPayload 에서 이름·서버를 꺼내, 게임이 서버를 보여 준 경우(다른 서버 플레이어)만 '이름@서버' 로 만든다.
     /// 이름 앞의 기호(파티 번호 등)는 그대로 둔다.
     /// </summary>
-    private static string FormatSender(SeString sender)
+    private string FormatSender(SeString sender)
     {
         var text = sender.TextValue;
         var player = sender.Payloads.OfType<PlayerPayload>().FirstOrDefault();
@@ -152,6 +159,7 @@ internal sealed class ChatListener : IDisposable
             return text;
 
         var name = player.PlayerName;
+        _onPlayerName?.Invoke(name);
         var nameAt = text.IndexOf(name, StringComparison.Ordinal);
         if (nameAt < 0)
             return text;
