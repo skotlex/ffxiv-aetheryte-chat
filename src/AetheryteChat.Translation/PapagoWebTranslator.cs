@@ -97,15 +97,10 @@ public sealed class PapagoWebTranslator : ITranslator
         if (!((int)status is >= 200 and < 300))
             throw new TranslationException($"Papago HTTP {(int)status}: {Trim(body)}");
 
-        try
+        using (var doc = JsonRead.Parse(body, "Papago"))
         {
-            using var doc = JsonDocument.Parse(body);
-            if (doc.RootElement.TryGetProperty("translatedText", out var t) && t.GetString() is { Length: > 0 } translated)
+            if (JsonRead.String(doc.RootElement, "translatedText") is { Length: > 0 } translated)
                 return new TranslationResult(translated.Trim(), sw.Elapsed, null, null);
-        }
-        catch (JsonException e)
-        {
-            throw new TranslationException($"Papago 응답이 JSON이 아닙니다: {Trim(body)}", e);
         }
 
         throw new TranslationException($"Papago 응답에 translatedText가 없습니다: {Trim(body)}");

@@ -46,7 +46,7 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
         try
         {
             using var doc = JsonDocument.Parse(result.StdOut);
-            return doc.RootElement.TryGetProperty("loggedIn", out var v) && v.ValueKind == JsonValueKind.True;
+            return JsonRead.Property(doc.RootElement, "loggedIn")?.ValueKind == JsonValueKind.True;
         }
         catch (JsonException)
         {
@@ -108,18 +108,16 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
         using (envelope)
         {
             var root = envelope.RootElement;
-            var resultText = root.TryGetProperty("result", out var r) ? r.GetString() ?? "" : "";
+            var resultText = JsonRead.String(root, "result") ?? "";
 
-            if (root.TryGetProperty("is_error", out var isError) && isError.ValueKind == JsonValueKind.True)
+            if (JsonRead.Property(root, "is_error")?.ValueKind == JsonValueKind.True)
                 throw new TranslationException($"claude 오류: {Trim(resultText)}")
                 {
-                    IsAuthError = AuthErrors.Matches(resultText)
-                        || (root.TryGetProperty("api_error_status", out var status) && status.ValueKind == JsonValueKind.Number
-                            && status.GetInt32() == 401),
+                    IsAuthError = AuthErrors.Matches(resultText) || JsonRead.Int64(root, "api_error_status") == 401,
                 };
 
             long? input = null, output = null;
-            if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
+            if (JsonRead.Property(root, "usage") is { ValueKind: JsonValueKind.Object } usage)
             {
                 input = SumTokens(usage, "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens");
                 output = SumTokens(usage, "output_tokens");
@@ -134,7 +132,7 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
         long? sum = null;
         foreach (var name in names)
         {
-            if (usage.TryGetProperty(name, out var v) && v.TryGetInt64(out var n))
+            if (JsonRead.Int64(usage, name) is { } n)
                 sum = (sum ?? 0) + n;
         }
         return sum;

@@ -97,28 +97,28 @@ public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator
             using (doc)
             {
                 var root = doc.RootElement;
-                switch (root.TryGetProperty("type", out var t) ? t.GetString() : null)
+                switch (JsonRead.String(root, "type"))
                 {
                     case "item.completed"
-                        when root.TryGetProperty("item", out var item)
-                             && item.TryGetProperty("type", out var it) && it.GetString() == "agent_message"
-                             && item.TryGetProperty("text", out var txt):
-                        answer = txt.GetString();
+                        when JsonRead.Property(root, "item") is { } item
+                             && JsonRead.String(item, "type") == "agent_message"
+                             && JsonRead.String(item, "text") is { } text:
+                        answer = text;
                         break;
 
-                    case "turn.completed" when root.TryGetProperty("usage", out var usage):
+                    case "turn.completed" when JsonRead.Property(root, "usage") is { } usage:
                         // input_tokens 는 캐시된 토큰을 포함한 합계다
-                        input = usage.TryGetProperty("input_tokens", out var i) && i.TryGetInt64(out var iv) ? iv : null;
-                        output = usage.TryGetProperty("output_tokens", out var o) && o.TryGetInt64(out var ov) ? ov : null;
+                        input = JsonRead.Int64(usage, "input_tokens");
+                        output = JsonRead.Int64(usage, "output_tokens");
                         break;
 
-                    case "error" when root.TryGetProperty("message", out var m):
-                        error = m.GetString();
+                    case "error" when JsonRead.String(root, "message") is { } message:
+                        error = message;
                         break;
 
                     case "turn.failed"
-                        when root.TryGetProperty("error", out var e) && e.TryGetProperty("message", out var em):
-                        error = em.GetString();
+                        when JsonRead.Property(root, "error") is { } e && JsonRead.String(e, "message") is { } message:
+                        error = message;
                         break;
                 }
             }

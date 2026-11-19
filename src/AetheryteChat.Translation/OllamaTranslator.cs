@@ -180,14 +180,13 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
         }
         var elapsed = DateTime.UtcNow - started;
 
-        using var doc = JsonDocument.Parse(responseText);
+        using var doc = JsonRead.Parse(responseText, "Ollama");
         var root = doc.RootElement;
-        var content = root.TryGetProperty("message", out var message) && message.TryGetProperty("content", out var c)
-            ? c.GetString() ?? ""
-            : throw new TranslationException($"Ollama 응답에 message.content가 없습니다: {Trim(responseText)}");
+        var content = (JsonRead.Property(root, "message") is { } message ? JsonRead.String(message, "content") : null)
+            ?? throw new TranslationException($"Ollama 응답에 message.content가 없습니다: {Trim(responseText)}");
 
-        long? input = root.TryGetProperty("prompt_eval_count", out var p) && p.TryGetInt64(out var pv) ? pv : null;
-        long? output = root.TryGetProperty("eval_count", out var o) && o.TryGetInt64(out var ov) ? ov : null;
+        var input = JsonRead.Int64(root, "prompt_eval_count");
+        var output = JsonRead.Int64(root, "eval_count");
 
         return new TranslationResult(AnswerJson.ExtractTranslation(content), elapsed, input, output);
     }
