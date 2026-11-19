@@ -33,7 +33,61 @@ for (var i = 0; i < args.Length; i++)
 if (positional.Count == 0)
 {
     Console.Error.WriteLine("사용법: TranslatorConsole (auth | ja2ko | ko2ja) [--engine claude|codex|ollama|papago] [--model m] [--effort e] [--exe path] [--endpoint url] [문장]");
+    Console.Error.WriteLine("        TranslatorConsole ollama (size | pull | ps | unload) [--model m] [--endpoint url]");
     return 2;
+}
+
+// Ollama 모델 관리 (번역 도구 탭의 받기·GPU 상태·내리기를 게임 없이 시험)
+if (positional[0] == "ollama")
+{
+    var ollamaEndpoint = endpoint ?? new OllamaOptions().Endpoint;
+    var ollamaModel = model ?? new OllamaOptions().Model;
+    try
+    {
+        switch (positional.ElementAtOrDefault(1))
+        {
+            case "size":
+                var size = await OllamaModels.GetDownloadSizeAsync(ollamaModel);
+                Console.WriteLine($"{ollamaModel}: {(size is { } s ? OllamaModels.FormatSize(s) : "(모름)")}");
+                var free = OllamaModels.FreeDiskBytes(ollamaEndpoint);
+                Console.WriteLine($"모델 폴더: {OllamaModels.ModelsDirectory}, 여유 {(free is { } f ? OllamaModels.FormatSize(f) : "(모름)")}");
+                return 0;
+            case "pull":
+                var expected = await OllamaModels.GetDownloadSizeAsync(ollamaModel);
+                var lastShown = DateTime.MinValue;
+                var lastStatus = "";
+                await OllamaModels.PullAsync(ollamaEndpoint, ollamaModel, expected, p =>
+                {
+                    // 줄이 너무 많이 나오지 않게 상태가 바뀔 때와 2초마다만 찍는다
+                    if (p.Status == lastStatus && DateTime.UtcNow - lastShown < TimeSpan.FromSeconds(2))
+                        return;
+                    lastStatus = p.Status;
+                    lastShown = DateTime.UtcNow;
+                    var fraction = p.Fraction is { } fr ? $" {fr:P0} ({OllamaModels.FormatSize(p.Completed)} / {OllamaModels.FormatSize(p.Total)})" : "";
+                    Console.WriteLine($"{p.Status}{fraction}");
+                }, CancellationToken.None);
+                Console.WriteLine("받았습니다.");
+                return 0;
+            case "ps":
+                var loaded = await OllamaModels.GetLoadedAsync(ollamaEndpoint, ollamaModel);
+                Console.WriteLine(loaded is null
+                    ? $"{ollamaModel}: 올라가 있지 않음"
+                    : $"{ollamaModel}: 전체 {OllamaModels.FormatSize(loaded.Size)}, GPU {OllamaModels.FormatSize(loaded.SizeVram)} ({loaded.GpuFraction:P0}), 내릴 시각 {loaded.ExpiresAt?.ToLocalTime():HH:mm:ss}{(loaded.PartlyOnCpu ? " — 일부가 CPU 에서 돈다" : "")}");
+                return 0;
+            case "unload":
+                await OllamaModels.UnloadAsync(ollamaEndpoint, ollamaModel);
+                Console.WriteLine($"{ollamaModel}: 내렸습니다.");
+                return 0;
+            default:
+                Console.Error.WriteLine("ollama 다음에 size | pull | ps | unload 중 하나를 적어 주세요.");
+                return 2;
+        }
+    }
+    catch (TranslationException e)
+    {
+        Console.Error.WriteLine(e.Message);
+        return 1;
+    }
 }
 
 ITranslator translator;

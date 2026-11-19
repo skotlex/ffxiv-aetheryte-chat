@@ -32,6 +32,9 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
     private const string CodexSetupUrl = "https://developers.openai.com/codex/cli";
     private const string OllamaDownloadUrl = "https://ollama.com/download";
 
+    /// <summary>모델 목록에 늘 보이는 권장 모델 (GPU 가 넉넉할 때 / GPU 가 없거나 적을 때)</summary>
+    private static readonly string[] RecommendedOllamaModels = ["gemma3:12b", "gemma3:4b"];
+
     private static float InputWidth => 320 * ImGuiHelpers.GlobalScale;
     private static float TimeoutSliderWidth => 160 * ImGuiHelpers.GlobalScale;
 
@@ -42,10 +45,20 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
     // Ollama 에 받아 둔 모델 목록. 주소를 바꾸거나 '다시 확인' 하면 다시 가져온다
     private Task<IReadOnlyList<string>>? _ollamaModels;
 
+    // 받기 전에 보여 줄 모델 크기 (ollama.com 레지스트리). 모델 이름마다 한 번 가져온다
+    private readonly Dictionary<string, Task<long?>> _downloadSizes = new(StringComparer.OrdinalIgnoreCase);
+
     // Ollama 모델 받기 (ollama pull 대신)
     private Task? _pull;
     private CancellationTokenSource? _pullCts;
-    private volatile string _pullProgress = "";
+    private volatile OllamaPullProgress? _pullProgress;
+
+    // GPU 에 올라간 상태 (/api/ps). 탭을 보는 동안 몇 초마다 다시 가져온다. 새로 가져오는 동안에는 지난 값을 보여 준다
+    private const double LoadedRefreshSeconds = 3;
+    private Task<OllamaLoadedModel?>? _loaded;
+    private DateTime _loadedAt;
+    private (bool Known, OllamaLoadedModel? Model) _lastLoaded;
+    private Task? _unload;
 
     private Configuration Config => plugin.Configuration;
     private TranslationQueue Queue => plugin.TranslationQueue;
@@ -185,10 +198,30 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
             _ollamaModels = null; // 다른 Ollama 의 모델 목록을 다시 가져온다
 
         var installed = _ollamaModels is { IsCompletedSuccessfully: true } t ? t.Result : [];
-        DrawTextSetting("모델", "ollamaModel", new OllamaOptions().Model, s.Model, v => s.Model = v ?? "", installed);
-        DrawOllamaModelState(s, installed);
-        HelpText("gemma3:12b를 권장합니다 — 한↔일 게임 용어까지 맞게 옮긴 모델이고 VRAM을 약 8GB 씁니다. " +
-                 "VRAM이 모자라면 더 작은 모델을 받아 바꿔 보세요(번역 품질은 시험하지 않았습니다).");
+        // 목록에는 받아 둔 모델과 권장 모델을 함께 둔다 — 아직 아무것도 받지 않았어도 고를 수 있게
+        var choices = installed.Concat(RecommendedOllamaModels.Where(r => !installed.Any(m => OllamaTranslator.SameModel(m, r)))).ToList();
+        if (DrawTextSetting("모델", "ollamaModel", new OllamaOptions().Model, s.Model, v => s.Model = v ?? "", choices))
+            ResetLoaded();
+        var isInstalled = DrawOllamaModelState(s, installed);
+        HelpText("GPU 메모리가 8GB 넘게 남으면 gemma3:12b(받을 때 약 8.2GB)를 권합니다 — 한↔일 게임 용어까지 맞게 옮긴 모델입니다. " +
+                 "GPU가 없거나 메모리가 적으면 gemma3:4b(약 3.4GB)를 쓰세요 — GPU 없이 CPU만으로도 한 줄에 약 3초, 처음 올릴 때 약 17초였습니다 " +
+                 "(내장 그래픽 노트북 실측). gemma3:1b 처럼 더 작은 모델은 번역을 제대로 하지 못했습니다.");
+
+        if (isInstalled)
+        {
+            ImGuiHelpers.ScaledDummy(4);
+            DrawOllamaGpuState(s);
+        }
+
+        ImGuiHelpers.ScaledDummy(4);
+        var preload = s.PreloadOnCheck;
+        if (ImGui.Checkbox("미리 GPU에 올려 두기", ref preload))
+        {
+            s.PreloadOnCheck = preload;
+            Apply();
+        }
+        HelpText("켜 두면 플러그인을 켤 때·도구를 바꿀 때 모델을 GPU에 올려 첫 번역이 빠릅니다. " +
+                 "끄면 첫 번역 때 올리므로 그 전까지 GPU 메모리를 쓰지 않습니다(대신 첫 번역이 몇 초 늦어집니다).");
 
         DrawTextSetting("모델 유지 시간 (keep_alive)", "ollamaKeepAlive", new OllamaOptions().KeepAlive, s.KeepAlive,
             v => s.KeepAlive = v ?? "", ["5m", "30m", "1h", "-1"]);
@@ -196,17 +229,18 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
         DrawTimeout("ollamaTimeout", s.TimeoutSeconds, v => s.TimeoutSeconds = v);
     }
 
-    /// <summary>모델 목록을 가져오는 중인지, 고른 모델을 받아 두었는지. 받아 두지 않았으면 여기서 받을 수 있다</summary>
-    private void DrawOllamaModelState(OllamaSettings s, IReadOnlyList<string> installed)
+    /// <summary>
+    /// 모델 목록을 가져오는 중인지, 고른 모델을 받아 두었는지. 받아 두지 않았으면 크기·디스크 여유를 보여 주고 여기서 받을 수 있다.
+    /// 받아 둔 모델이면 true
+    /// </summary>
+    private bool DrawOllamaModelState(OllamaSettings s, IReadOnlyList<string> installed)
     {
         using var indent = ImRaii.PushIndent();
 
         if (_pull is { IsCompleted: false })
         {
-            HelpText($"{s.Model} 받는 중… {_pullProgress}");
-            if (ImGui.Button("취소##pull"))
-                _pullCts?.Cancel();
-            return;
+            DrawPullProgress(s);
+            return false;
         }
         if (_pull is { IsFaulted: true } failed)
             WrappedText.Draw(failed.Exception?.InnerException?.Message ?? "모델을 받지 못했습니다.", ErrorColor);
@@ -215,41 +249,163 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
         {
             case null or { IsCompleted: false }:
                 HelpText("받아 둔 모델 확인 중…");
-                break;
+                return false;
             case { IsFaulted: true } faulted:
                 WrappedText.Draw(faulted.Exception?.InnerException?.Message ?? "Ollama에 연결하지 못했습니다.", ErrorColor);
-                break;
-            default:
-                if (installed.Any(m => OllamaTranslator.SameModel(m, s.Model)))
-                {
-                    HelpText("받아 둔 모델입니다.");
-                    break;
-                }
-                WrappedText.Draw($"{s.Model} 모델을 아직 받지 않았습니다.", ErrorColor);
-                if (ImGui.Button($"지금 받기##pull"))
-                    StartPull(s);
-                Layout.SameLineIfFits(Layout.TextWidth("(수 GB를 내려받습니다)"));
-                ImGui.AlignTextToFramePadding();
-                ImGui.TextColored(DimColor, "(수 GB를 내려받습니다)");
-                break;
+                return false;
         }
+
+        if (installed.Any(m => OllamaTranslator.SameModel(m, s.Model)))
+        {
+            HelpText("받아 둔 모델입니다.");
+            return true;
+        }
+
+        WrappedText.Draw($"{s.Model} 모델을 아직 받지 않았습니다.", ErrorColor);
+
+        // 받기 전에 크기와 디스크 여유를 알린다 — 수 GB 라 모르고 받으면 디스크가 찰 수 있다
+        if (!_downloadSizes.TryGetValue(s.Model, out var sizeTask))
+            _downloadSizes[s.Model] = sizeTask = OllamaModels.GetDownloadSizeAsync(s.Model);
+        if (sizeTask.IsFaulted)
+        {
+            // 레지스트리에 없는 이름 — 받아도 실패하므로 버튼을 두지 않는다
+            WrappedText.Draw(sizeTask.Exception?.InnerException?.Message ?? "모델을 찾지 못했습니다.", ErrorColor);
+            return false;
+        }
+
+        var size = sizeTask.IsCompletedSuccessfully ? sizeTask.Result : null;
+        var free = OllamaModels.FreeDiskBytes(s.Endpoint);
+        var info = sizeTask.IsCompleted
+            ? size is { } sz ? $"내려받을 크기 약 {OllamaModels.FormatSize(sz)}" : "내려받을 크기를 알 수 없습니다 (수 GB일 수 있습니다)"
+            : "내려받을 크기 확인 중…";
+        if (free is { } f)
+            info += $" · 디스크 여유 {OllamaModels.FormatSize(f)}";
+        HelpText(info);
+
+        // 받는 동안 임시 파일도 생기므로 1GB 여유를 더 둔다
+        var lowDisk = size is { } need && free is { } have && have < need + 1_000_000_000;
+        if (lowDisk)
+            WrappedText.Draw($"디스크 여유가 모자랍니다 — 모델 폴더({OllamaModels.ModelsDirectory})가 있는 드라이브의 공간을 비워 주세요.", ErrorColor);
+
+        using (ImRaii.Disabled(lowDisk))
+        {
+            if (ImGui.Button("지금 받기##pull"))
+                StartPull(s, size);
+        }
+        return false;
     }
 
-    private void StartPull(OllamaSettings s)
+    /// <summary>받는 중: 전체 진행 막대와 취소</summary>
+    private void DrawPullProgress(OllamaSettings s)
+    {
+        var p = _pullProgress;
+        var label = p switch
+        {
+            null or { Status: "pulling manifest" } => "목록 받는 중…",
+            { Fraction: { } fraction } when p.Status.StartsWith("pulling", StringComparison.Ordinal) =>
+                $"{fraction:P0}  ({OllamaModels.FormatSize(p.Completed)} / {OllamaModels.FormatSize(p.Total)})",
+            { Status: "verifying sha256 digest" } => "받은 파일 확인 중…",
+            { Status: "writing manifest" or "removing any unused layers" } => "마무리 중…",
+            { Status: "success" } => "다 받았습니다",
+            _ => p.Status,
+        };
+        HelpText($"{s.Model} 받는 중");
+        ImGui.ProgressBar((float)(p?.Fraction ?? 0), new Vector2(Layout.FitWidth(InputWidth), 0), label);
+        if (ImGui.Button("취소##pull"))
+            _pullCts?.Cancel();
+        Layout.SameLineIfFits(Layout.TextWidth("취소해도 받은 부분은 남아, 다시 받으면 이어서 받습니다"));
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextColored(DimColor, "취소해도 받은 부분은 남아, 다시 받으면 이어서 받습니다");
+    }
+
+    private void StartPull(OllamaSettings s, long? expectedSize)
     {
         _pullCts?.Cancel();
         _pullCts = new CancellationTokenSource();
-        _pullProgress = "";
+        _pullProgress = null;
         var endpoint = s.Endpoint;
         var model = s.Model;
         var ct = _pullCts.Token;
         _pull = Task.Run(async () =>
         {
-            await OllamaTranslator.PullAsync(endpoint, model, p => _pullProgress = p, ct);
+            await OllamaModels.PullAsync(endpoint, model, expectedSize, p => _pullProgress = p, ct);
             // 받았으면 목록과 상태를 다시 확인한다 — 다음 프레임의 그리기에서 목록을 다시 가져온다
             _ollamaModels = null;
             await Plugin.Framework.RunOnFrameworkThread(Queue.Reload);
         }, ct);
+    }
+
+    /// <summary>
+    /// GPU 에 올라가 있는지, 다 올라갔는지(일부가 CPU 에서 돌면 몇 배 느리다), 언제 내리는지. 바로 내릴 수도 있다
+    /// </summary>
+    private void DrawOllamaGpuState(OllamaSettings s)
+    {
+        Heading("GPU 상태");
+
+        if (_loaded is { IsCompleted: true } done)
+        {
+            if (done.IsCompletedSuccessfully)
+                _lastLoaded = (true, done.Result);
+            if ((DateTime.UtcNow - _loadedAt).TotalSeconds >= LoadedRefreshSeconds)
+                _loaded = null;
+        }
+        if (_loaded is null)
+        {
+            _loaded = OllamaModels.GetLoadedAsync(s.Endpoint, s.Model);
+            _loadedAt = DateTime.UtcNow;
+        }
+
+        using var indent = ImRaii.PushIndent();
+        var (known, loaded) = _lastLoaded;
+        if (!known)
+        {
+            HelpText("확인 중…");
+            return;
+        }
+        if (loaded is null)
+        {
+            HelpText("올라가 있지 않습니다 — 다음 번역 때 올립니다 (처음 몇 초 더 걸립니다).");
+            return;
+        }
+
+        var until = loaded.ExpiresAt is { } at && at - DateTimeOffset.Now is var left && left < TimeSpan.FromDays(1)
+            ? $" · {Math.Max(1, (int)Math.Ceiling(left.TotalMinutes))}분 뒤 내림"
+            : " · 계속 올려 둠";
+        if (loaded.PartlyOnCpu)
+        {
+            WrappedText.Draw(loaded.SizeVram > 0
+                ? $"GPU에 {loaded.GpuFraction:P0}만 올라가고 나머지는 CPU에서 돕니다 ({OllamaModels.FormatSize(loaded.Size)}){until}. " +
+                  "번역이 몇 배 느려질 수 있습니다 — GPU 메모리가 모자라면 더 작은 모델을 권합니다."
+                : $"GPU를 쓰지 못하고 CPU에서만 돕니다 ({OllamaModels.FormatSize(loaded.Size)}){until}. " +
+                  "GPU가 없거나 Ollama가 지원하지 않는 GPU(내장 그래픽 등)입니다 — 느리다면 gemma3:4b를 권합니다.", ErrorColor);
+        }
+        else
+        {
+            HelpText($"GPU에 모두 올라가 있습니다 ({OllamaModels.FormatSize(loaded.Size)}){until}.");
+        }
+
+        using (ImRaii.Disabled(_unload is { IsCompleted: false }))
+        {
+            if (ImGui.Button("지금 내리기##unload"))
+            {
+                var endpoint = s.Endpoint;
+                var model = s.Model;
+                _unload = Task.Run(async () =>
+                {
+                    await OllamaModels.UnloadAsync(endpoint, model);
+                    _loaded = null; // 바로 다시 확인한다
+                });
+            }
+        }
+        Layout.SameLineIfFits(Layout.TextWidth("GPU 메모리를 바로 비웁니다. 다음 번역 때 다시 올립니다"));
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextColored(DimColor, "GPU 메모리를 바로 비웁니다. 다음 번역 때 다시 올립니다");
+    }
+
+    private void ResetLoaded()
+    {
+        _loaded = null;
+        _lastLoaded = default;
     }
 
     private static void DrawPapago()
@@ -410,6 +566,8 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
         _claudeFound = default;
         _codexFound = default;
         _ollamaModels = null;
+        _downloadSizes.Clear();
+        ResetLoaded();
         Queue.Reload();
     }
 

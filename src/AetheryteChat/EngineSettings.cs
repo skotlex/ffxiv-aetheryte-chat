@@ -69,6 +69,9 @@ public sealed class OllamaSettings
     /// <summary>번역 사이에 모델을 VRAM 에 올려 두는 시간 (Ollama 형식: 30m, 1h, -1 = 계속)</summary>
     public string KeepAlive { get; set; } = Defaults.KeepAlive;
 
+    /// <summary>상태를 확인할 때 모델을 미리 GPU 에 올린다. 끄면 첫 번역 때 올린다</summary>
+    public bool PreloadOnCheck { get; set; } = Defaults.Preload;
+
     public int TimeoutSeconds { get; set; } = (int)Defaults.Timeout.TotalSeconds;
 
     internal OllamaOptions ToOptions(string glossary) => new()
@@ -76,6 +79,7 @@ public sealed class OllamaSettings
         Endpoint = EngineSettings.OrNull(Endpoint) ?? Defaults.Endpoint,
         Model = EngineSettings.OrNull(Model) ?? Defaults.Model,
         KeepAlive = EngineSettings.OrNull(KeepAlive) ?? Defaults.KeepAlive,
+        Preload = PreloadOnCheck,
         Timeout = EngineSettings.Timeout(TimeoutSeconds),
         Glossary = glossary,
     };

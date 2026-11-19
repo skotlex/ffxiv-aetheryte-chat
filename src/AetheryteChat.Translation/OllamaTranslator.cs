@@ -13,6 +13,12 @@ public sealed class OllamaOptions : TranslatorOptions
     /// <summary>번역 사이에 모델을 VRAM 에 올려 두는 시간. 짧으면 매번 다시 올리느라 느려진다</summary>
     public string KeepAlive { get; set; } = "30m";
 
+    /// <summary>
+    /// 상태를 확인할 때(플러그인을 켤 때·도구를 바꿀 때) 모델을 미리 GPU 에 올린다. 끄면 첫 번역 때 올리느라 몇 초 늦지만,
+    /// 번역하기 전까지 GPU 메모리를 차지하지 않는다
+    /// </summary>
+    public bool Preload { get; set; } = true;
+
     /// <summary>처음 부를 때 모델을 VRAM 에 올리는 시간까지 포함한다</summary>
     public override TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(60);
 }
@@ -32,7 +38,7 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
 
     public string Name => $"Ollama ({options.Model})";
     public string ShortName => options.Model;
-    public string NotReadyHint => $"모델 없음 — 터미널에서 'ollama pull {options.Model}'로 받아 주세요";
+    public string NotReadyHint => "모델 없음 — '번역 도구' 탭에서 받아 주세요";
 
     /// <summary>로그인 대신 Ollama 가 떠 있고 모델을 받아 두었는지 본다. 모델은 부르지 않는다.</summary>
     public async Task<bool> IsLoggedInAsync(CancellationToken ct = default)
@@ -41,7 +47,7 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
         var installed = models.Any(m => SameModel(m, options.Model));
 
         // 처음 번역할 때 모델을 VRAM 에 올리느라 7~8초 걸리므로(실측) 미리 올려 둔다. 기다리지 않는다
-        if (installed)
+        if (installed && options.Preload)
             _ = PreloadAsync();
 
         return installed; // 모델이 없으면 '로그인 안 됨' 으로 보여 ollama pull 을 안내한다
@@ -82,54 +88,6 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
             throw new TranslationException($"{url} 의 응답이 Ollama 형식이 아닙니다 — 주소를 확인해 주세요.", e);
         }
     }
-
-    /// <summary>
-    /// 모델을 받는다 (터미널의 ollama pull 과 같다). 수 GB 라 오래 걸리므로 진행 상황을 onProgress 로 알린다
-    /// </summary>
-    /// <exception cref="TranslationException">연결 실패 또는 Ollama 가 거절 (없는 모델 이름 등)</exception>
-    public static async Task PullAsync(string endpoint, string model, Action<string> onProgress, CancellationToken ct)
-    {
-        var url = $"{NormalizeEndpoint(endpoint)}/api/pull";
-        using var request = new HttpRequestMessage(HttpMethod.Post, url)
-        {
-            Content = JsonContent.Create(new JsonObject { ["model"] = model, ["stream"] = true }),
-        };
-        try
-        {
-            // 응답 머리글만 받고 돌아와, 한 줄에 하나씩 오는 진행 상황을 읽는다
-            using var response = await PullHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-            if (!response.IsSuccessStatusCode)
-                throw new TranslationException($"모델을 받지 못했습니다 (HTTP {(int)response.StatusCode}): {Trim(await response.Content.ReadAsStringAsync(ct))}");
-
-            using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(ct));
-            while (await reader.ReadLineAsync(ct) is { } line)
-            {
-                if (line.Length == 0)
-                    continue;
-                using var doc = JsonDocument.Parse(line);
-                var root = doc.RootElement;
-                if (root.TryGetProperty("error", out var error))
-                    throw new TranslationException($"모델을 받지 못했습니다: {error.GetString()}");
-
-                if (root.TryGetProperty("total", out var t) && t.TryGetInt64(out var total) && total > 0
-                    && root.TryGetProperty("completed", out var c) && c.TryGetInt64(out var completed))
-                    onProgress($"{completed * 100 / total}% ({completed / 1e9:0.0} / {total / 1e9:0.0} GB)");
-                else if (root.TryGetProperty("status", out var status))
-                    onProgress(status.GetString() ?? "");
-            }
-        }
-        catch (HttpRequestException e)
-        {
-            throw new TranslationException($"Ollama에 연결하지 못했습니다 ({url}) — Ollama를 켜 주세요.", e);
-        }
-        catch (JsonException e)
-        {
-            throw new TranslationException($"{url} 의 응답이 Ollama 형식이 아닙니다.", e);
-        }
-    }
-
-    // 모델 받기는 수 분 걸릴 수 있어 HttpClient 기본 제한 시간(100초)을 쓰지 않는다. 멈추는 것은 취소로 한다
-    private static readonly HttpClient PullHttp = new() { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
 
     /// <summary>'http://' 를 빠뜨렸거나 끝에 '/' 를 붙여도 받아 준다</summary>
     public static string NormalizeEndpoint(string endpoint)
@@ -191,10 +149,18 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
         string responseText;
         try
         {
-            using var response = await Http.PostAsJsonAsync($"{BaseUrl}/api/chat", body, timeoutCts.Token);
-            responseText = await response.Content.ReadAsStringAsync(timeoutCts.Token);
-            if (!response.IsSuccessStatusCode)
+            // Ollama 의 실행기가 가끔 서버와의 연결을 끊고 500 을 돌려준다 (2026-11-19 CPU 만 쓰는 노트북에서 8번 중 1번,
+            // 실행기 쪽은 답을 다 만든 뒤였다). 같은 요청을 한 번만 다시 보낸다 — 제한 시간은 두 번을 합쳐 센다
+            for (var attempt = 1; ; attempt++)
+            {
+                using var response = await Http.PostAsJsonAsync($"{BaseUrl}/api/chat", body, timeoutCts.Token);
+                responseText = await response.Content.ReadAsStringAsync(timeoutCts.Token);
+                if (response.IsSuccessStatusCode)
+                    break;
+                if ((int)response.StatusCode >= 500 && attempt == 1)
+                    continue;
                 throw new TranslationException($"Ollama HTTP {(int)response.StatusCode}: {Trim(responseText)}");
+            }
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
