@@ -4,8 +4,9 @@
 //   dotnet run --project tools/TranslatorConsole -- ja2ko "零式4層、初見です。よろしくお願いします！"
 //   dotnet run --project tools/TranslatorConsole -- ko2ja --effort low          (줄마다 번역, 빈 줄로 끝)
 //
-// 옵션: --engine <claude|codex|ollama|papago> (기본 claude, ollama 는 --model 로 모델 지정), --model <name> (claude 기본 haiku),
-//       --effort <low|medium|high> (claude: --effort, codex: reasoning effort), --exe <실행 파일 경로>
+// 옵션: --engine <claude|codex|ollama|papago> (기본 claude), --model <name> (claude 기본 haiku, ollama 기본 gemma3:12b),
+//       --effort <low|medium|high> (claude: --effort, codex: reasoning effort), --exe <실행 파일 경로>,
+//       --endpoint <url> (ollama 주소, 기본 http://127.0.0.1:11434)
 
 using System.Text;
 using AetheryteChat.Translation;
@@ -14,7 +15,7 @@ Console.InputEncoding = Encoding.UTF8;
 Console.OutputEncoding = Encoding.UTF8;
 
 string engine = "claude";
-string? model = null, effort = null, exe = null;
+string? model = null, effort = null, exe = null, endpoint = null;
 var positional = new List<string>();
 for (var i = 0; i < args.Length; i++)
 {
@@ -24,13 +25,14 @@ for (var i = 0; i < args.Length; i++)
         case "--model": model = args[++i]; break;
         case "--effort": effort = args[++i]; break;
         case "--exe": exe = args[++i]; break;
+        case "--endpoint": endpoint = args[++i]; break;
         default: positional.Add(args[i]); break;
     }
 }
 
 if (positional.Count == 0)
 {
-    Console.Error.WriteLine("사용법: TranslatorConsole (auth | ja2ko | ko2ja) [--engine claude|codex] [--model m] [--effort e] [--exe path] [문장]");
+    Console.Error.WriteLine("사용법: TranslatorConsole (auth | ja2ko | ko2ja) [--engine claude|codex|ollama|papago] [--model m] [--effort e] [--exe path] [--endpoint url] [문장]");
     return 2;
 }
 
@@ -56,6 +58,8 @@ switch (engine)
         var ollama = new OllamaOptions();
         if (model is not null)
             ollama.Model = model;
+        if (endpoint is not null)
+            ollama.Endpoint = endpoint;
         translator = new OllamaTranslator(ollama);
         exePath = ollama.Endpoint;
         break;

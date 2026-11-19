@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace AetheryteChat.Translation;
 
-public sealed class ClaudeCliOptions
+public sealed class ClaudeCliOptions : TranslatorOptions
 {
     /// <summary>claude.exe 경로. null 이면 자동으로 찾는다.</summary>
     public string? ExecutablePath { get; set; }
@@ -13,7 +13,7 @@ public sealed class ClaudeCliOptions
     /// <summary>low / medium / high. null 이면 넘기지 않는다.</summary>
     public string? Effort { get; set; }
 
-    public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(30);
+    public override TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(30);
 }
 
 /// <summary>
@@ -31,10 +31,9 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
     public string ShortName => $"Claude {options.Model}";
     public string NotReadyHint => "로그인 안 됨 — 터미널에서 'claude'로 로그인해 주세요";
 
-    private string Executable =>
-        _resolvedPath ??= options.ExecutablePath
-            ?? ClaudeCliLocator.Find()
-            ?? throw new TranslationException("claude.exe를 찾지 못했습니다. Claude Code가 설치되어 있는지 확인해 주세요.");
+    private string Executable => _resolvedPath ??= CliLocation.Resolve(
+        options.ExecutablePath, ClaudeCliLocator.Find,
+        "claude.exe를 찾지 못했습니다 — Claude Code를 설치하거나 '번역 도구' 탭에서 경로를 지정해 주세요.");
 
     public async Task<bool> IsLoggedInAsync(CancellationToken ct = default)
     {
@@ -67,7 +66,7 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
             "--strict-mcp-config",
             "--setting-sources", "",
             "--model", options.Model,
-            "--system-prompt", Prompts.For(direction),
+            "--system-prompt", Prompts.For(direction, options.Glossary),
         };
         if (!string.IsNullOrEmpty(options.Effort))
             args.AddRange(["--effort", options.Effort]);

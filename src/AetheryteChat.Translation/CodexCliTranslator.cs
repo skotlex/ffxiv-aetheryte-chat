@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace AetheryteChat.Translation;
 
-public sealed class CodexCliOptions
+public sealed class CodexCliOptions : TranslatorOptions
 {
     /// <summary>codex.exe 경로. null 이면 자동으로 찾는다.</summary>
     public string? ExecutablePath { get; set; }
@@ -13,7 +13,7 @@ public sealed class CodexCliOptions
     public string ReasoningEffort { get; set; } = "low";
 
     /// <summary>Claude 보다 느리다 (실측 약 5.5초, DESIGN 4.3)</summary>
-    public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(60);
+    public override TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(60);
 }
 
 /// <summary>
@@ -32,10 +32,9 @@ public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator
     public string ShortName => options.Model is { Length: > 0 } model ? $"Codex {model}" : "Codex";
     public string NotReadyHint => "로그인 안 됨 — 터미널에서 'codex login'으로 로그인해 주세요";
 
-    private string Executable =>
-        _resolvedPath ??= options.ExecutablePath
-            ?? CodexCliLocator.Find()
-            ?? throw new TranslationException("codex.exe를 찾지 못했습니다. Codex CLI가 설치되어 있는지 확인해 주세요.");
+    private string Executable => _resolvedPath ??= CliLocation.Resolve(
+        options.ExecutablePath, CodexCliLocator.Find,
+        "codex.exe를 찾지 못했습니다 — Codex CLI를 설치하거나 '번역 도구' 탭에서 경로를 지정해 주세요.");
 
     public async Task<bool> IsLoggedInAsync(CancellationToken ct = default)
     {
@@ -63,7 +62,7 @@ public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator
         if (!string.IsNullOrEmpty(options.Model))
             args.AddRange(["-m", options.Model]);
 
-        var prompt = Prompts.For(direction) + "\n\n" + Prompts.WrapMessage(text);
+        var prompt = Prompts.For(direction, options.Glossary) + "\n\n" + Prompts.WrapMessage(text);
         var run = await CliRunner.RunAsync(Executable, args, prompt, WorkDir, options.Timeout, ct);
 
         return ParseEvents(run.StdOut, run.StdErr, run.ExitCode, run.Elapsed);

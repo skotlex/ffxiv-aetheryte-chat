@@ -31,12 +31,14 @@ public static class ClaudeCliLocator
     {
         // 게임 프로세스에서는 PATH 가 다를 수 있으니 흔한 설치 위치를 먼저 본다.
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         yield return Path.Combine(appData, "npm");
         yield return Path.Combine(home, ".local", "bin"); // 네이티브 설치 프로그램 위치
+        yield return Path.Combine(localAppData, "Microsoft", "WinGet", "Links"); // winget
+        yield return Path.Combine(home, "scoop", "shims"); // scoop
 
-        var path = Environment.GetEnvironmentVariable("PATH") ?? "";
-        foreach (var dir in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var dir in CliLocation.PathDirs())
             yield return dir;
     }
 }
