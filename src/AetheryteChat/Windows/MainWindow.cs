@@ -124,23 +124,26 @@ internal sealed class MainWindow : StyledWindow, IDisposable
             else
                 WrappedText.Draw(original);
 
-            // 번역 도구를 바꾸면 번역이 더해진다 — 어느 모델의 번역인지 [모델] 로 구분한다
+            // 번역 도구를 바꾸면 번역이 더해진다 — 한 줄에 번역이 둘 이상일 때만 어느 모델의 번역인지 [모델] 로 구분한다
             using var indent = ImRaii.PushIndent();
-            foreach (var t in line.Translations)
+            var translations = line.Translations;
+            var showEngine = translations.Count > 1;
+            foreach (var t in translations)
             {
+                var tag = showEngine ? $"[{t.Engine}] " : "";
                 switch (t.State)
                 {
                     case TranslationState.Pending:
-                        WrappedText.Draw($"… [{t.Engine}] 번역 중", DimColor);
+                        WrappedText.Draw($"… {tag}번역 중", DimColor);
                         break;
                     case TranslationState.Done:
-                        DrawDoneTranslation(line, t);
+                        DrawDoneTranslation(line, t, tag);
                         break;
                     case TranslationState.Failed:
-                        WrappedText.Draw($"[{t.Engine}] 번역 실패: {t.Result}", ErrorColor);
+                        WrappedText.Draw($"{tag}번역 실패: {t.Result}", ErrorColor);
                         break;
                     case TranslationState.Skipped:
-                        WrappedText.Draw($"[{t.Engine}] {t.Result}", DimColor);
+                        WrappedText.Draw($"{tag}{t.Result}", DimColor);
                         break;
                 }
             }
@@ -156,9 +159,9 @@ internal sealed class MainWindow : StyledWindow, IDisposable
     /// <summary>
     /// 끝난 번역 한 줄. 개발용 표본 기록을 켰으면 오른쪽 클릭으로 '오역 제보' 메뉴를 연다 (기록을 끈 사용자에게는 메뉴가 없다)
     /// </summary>
-    private void DrawDoneTranslation(ChatLine line, LineTranslation t)
+    private void DrawDoneTranslation(ChatLine line, LineTranslation t, string tag)
     {
-        var text = $"→ [{t.Engine}] {t.Result}{(t.Reported ? "  (오역 제보함)" : "")}";
+        var text = $"→ {tag}{t.Result}{(t.Reported ? "  (오역 제보함)" : "")}";
         if (!Owner.SampleLog.Enabled || t.IsOwnText)
         {
             WrappedText.Draw(text, TranslationColor);
