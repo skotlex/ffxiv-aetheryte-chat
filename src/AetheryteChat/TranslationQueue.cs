@@ -36,11 +36,15 @@ internal sealed partial class TranslationQueue : IDisposable
     // 설정의 '번역할 채널' — 끈 채널의 대화는 번역하지 않는다 (채팅 기록에는 그대로 나온다)
     private readonly Func<XivChatType, bool> _isChannelEnabled;
 
-    public TranslationQueue(ITranslator translator, Func<XivChatType, bool> isChannelEnabled)
+    // 지금 설정으로 엔진을 만든다 — 설정을 바꾸거나 '다시 확인' 할 때 새로 만든다
+    private readonly Func<ITranslator> _createTranslator;
+
+    public TranslationQueue(Func<ITranslator> createTranslator, Func<XivChatType, bool> isChannelEnabled)
     {
-        _translator = translator;
+        _createTranslator = createTranslator;
+        _translator = createTranslator();
         _isChannelEnabled = isChannelEnabled;
-        _loginCheck = CheckLoginAsync(translator, ++_loginCheckId);
+        _loginCheck = CheckLoginAsync(_translator, ++_loginCheckId);
     }
 
     public EngineStatus Status { get; private set; } = EngineStatus.Checking;
@@ -49,9 +53,13 @@ internal sealed partial class TranslationQueue : IDisposable
     public string EngineName => _translator.Name;
     public string NotReadyHint => _translator.NotReadyHint;
 
-    /// <summary>번역 엔진을 바꾸고 로그인 상태를 다시 확인한다. UI 스레드에서 부른다.</summary>
-    public void SetTranslator(ITranslator translator)
+    /// <summary>
+    /// 지금 설정으로 엔진을 다시 만들고 상태를 다시 확인한다. 엔진·엔진 설정을 바꿨을 때,
+    /// 그리고 터미널에서 로그인하거나 Ollama 를 켠 뒤 '다시 확인' 할 때 부른다 (실행 파일도 다시 찾는다). UI 스레드에서 부른다.
+    /// </summary>
+    public void Reload()
     {
+        var translator = _createTranslator();
         _translator = translator;
         Status = EngineStatus.Checking;
         StatusDetail = null;

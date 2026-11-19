@@ -12,16 +12,18 @@ internal static class UiCommon
 
     /// <summary>
     /// 엔진 상태를 바로 앞 컨트롤 옆에 그린다. 자리가 모자라면 다음 줄에 줄바꿈해서 그린다.
-    /// rightAlign 이면 그 줄의 오른쪽 끝에 붙인다
+    /// rightAlign 이면 그 줄의 오른쪽 끝에 붙인다.
+    /// 준비가 안 됐으면 글자를 눌러 다시 확인할 수 있다 — 터미널에서 로그인하거나 Ollama 를 켠 뒤 플러그인을 다시 켜지 않아도 되게
     /// </summary>
     public static void DrawEngineStatus(TranslationQueue queue, bool rightAlign = false)
     {
+        var name = queue.EngineName;
         var (text, color) = queue.Status switch
         {
-            EngineStatus.Checking => ("로그인 확인 중…", DimColor),
-            EngineStatus.Ready => ($"{queue.EngineName} 준비됨", DimColor),
-            EngineStatus.NotLoggedIn => ($"{queue.EngineName} {queue.NotReadyHint}", ErrorColor),
-            _ => ($"{queue.EngineName} 사용 불가: {queue.StatusDetail}", ErrorColor),
+            EngineStatus.Checking => ($"{name} 확인 중…".TrimStart(), DimColor),
+            EngineStatus.Ready => ($"{name} 준비됨", DimColor),
+            EngineStatus.NotLoggedIn => ($"{name} {queue.NotReadyHint}".TrimStart(), ErrorColor),
+            _ => ($"{name} 사용 불가: {queue.StatusDetail}".TrimStart(), ErrorColor),
         };
         var width = Layout.TextWidth(text);
         var placed = rightAlign ? Layout.RightAlign(width) : Layout.SameLineIfFits(width);
@@ -34,5 +36,16 @@ internal static class UiCommon
         {
             WrappedText.Draw(text, color);
         }
+
+        // 이름이 없으면 아직 도구를 고르지 않은 것 — 다시 확인할 것이 없다
+        if (queue.Status is EngineStatus.NotLoggedIn or EngineStatus.Unavailable && name.Length > 0 && ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("눌러서 다시 확인");
+            if (ImGui.IsItemClicked())
+                queue.Reload();
+        }
     }
+
+    /// <summary>설명 글 (흐린 색, 창 폭에 맞춰 줄바꿈)</summary>
+    public static void HelpText(string text) => WrappedText.Draw(text, DimColor);
 }

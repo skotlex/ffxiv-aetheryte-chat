@@ -58,8 +58,18 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>이 창에만 적용할 Dalamud 스타일 이름 (스타일 편집기에서 저장한 것 또는 내장). null 이면 Dalamud 설정을 따른다</summary>
     public string? WindowStyleName { get; set; }
 
-    /// <summary>번역 도구. Claude CLI 가 주력이고 Codex CLI 는 느리지만 대안 (DESIGN 4절)</summary>
-    public TranslationEngine Engine { get; set; } = TranslationEngine.Claude;
+    /// <summary>
+    /// 번역 도구. null 이면 아직 고르지 않았다 — 처음 설치한 사람에게 '번역 도구' 탭을 열어 고르게 한다.
+    /// 사람마다 쓸 수 있는 도구(구독·GPU)가 달라 하나를 기본으로 정해 두지 않는다
+    /// </summary>
+    public TranslationEngine? Engine { get; set; }
+
+    public ClaudeSettings Claude { get; set; } = new();
+    public CodexSettings Codex { get; set; } = new();
+    public OllamaSettings Ollama { get; set; } = new();
+
+    /// <summary>번역 지시문에 넣는 용어집 (한 줄에 '일본어 → 한국어'). null 이면 기본 용어집, 빈 문자열이면 용어집 없음</summary>
+    public string? Glossary { get; set; }
 
     /// <summary>
     /// 번역하지 않을 채널 묶음. 끈 것만 적어, 나중에 묶음이 늘어도 새 묶음은 기본으로 켜진다

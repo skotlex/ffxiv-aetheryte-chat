@@ -12,9 +12,13 @@ namespace AetheryteChat.Windows;
 /// <summary>
 /// 받은 채팅(원문 + 한국어 번역)과 설정 창. 보내기 위치가 '채팅 아래' 면 받은 채팅 아래에 보내기를 붙인다.
 /// </summary>
-internal sealed class MainWindow : StyledWindow
+internal sealed class MainWindow : StyledWindow, IDisposable
 {
     private readonly ChannelColors _channelColors = new(Plugin.GameConfig);
+    private readonly EngineTab _engineTab;
+
+    // 다음 프레임에 '번역 도구' 탭을 연다 — 아직 번역 도구를 고르지 않았거나 플러그인 목록의 설정 버튼을 눌렀을 때
+    private bool _selectEngineTab;
 
     // 지난 프레임에 잰 보내기 묶음의 높이 — 받은 채팅 로그가 그만큼 비켜 준다 (보내기 높이는 번역 확인 줄에 따라 바뀐다)
     private float _sendPanelHeight;
@@ -26,7 +30,18 @@ internal sealed class MainWindow : StyledWindow
             MinimumSize = new Vector2(420, 360),
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
         };
+        _engineTab = new EngineTab(plugin);
+        _selectEngineTab = plugin.Configuration.Engine is null;
     }
+
+    /// <summary>창을 열고 '번역 도구' 탭을 보여 준다</summary>
+    public void OpenEngineTab()
+    {
+        IsOpen = true;
+        _selectEngineTab = true;
+    }
+
+    public void Dispose() => _engineTab.Dispose();
 
     protected override void DrawContent()
     {
@@ -40,6 +55,13 @@ internal sealed class MainWindow : StyledWindow
         {
             if (tab.Success)
                 DrawChat(sendBelow);
+        }
+        var engineTabFlags = _selectEngineTab ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
+        _selectEngineTab = false;
+        using (var tab = ImRaii.TabItem("번역 도구###engine", engineTabFlags))
+        {
+            if (tab.Success)
+                _engineTab.Draw();
         }
         using (var tab = ImRaii.TabItem("설정###settings"))
         {
@@ -148,45 +170,9 @@ internal sealed class MainWindow : StyledWindow
         }
     }
 
-    /// <summary>번역 도구를 바꿀 때 새 도구로 다시 번역할 최근 대화 수</summary>
-    private const int RetranslateCount = 10;
-
-    // 목록 상자에는 이름만 보이고(길면 잘린다), 설명은 펼친 목록에만 나온다
-    private static readonly (TranslationEngine Engine, string Name, string Description)[] Engines =
-    [
-        (TranslationEngine.Claude, "Claude CLI", "빠릅니다 (약 2초)"),
-        (TranslationEngine.Codex, "Codex CLI", "느리고 (약 5~6초) 토큰을 많이 씁니다"),
-        (TranslationEngine.Ollama, "Ollama (로컬)", "가장 빠르지만 (약 1초) GPU를 사용합니다"),
-        (TranslationEngine.Papago, "Papago (웹)", "막힐 수 있으며 게임 용어에 약합니다"),
-    ];
-
     private void DrawSettings()
     {
         var config = Owner.Configuration;
-
-        ImGui.TextUnformatted("번역 도구");
-        var current = Engines.FirstOrDefault(e => e.Engine == config.Engine);
-        ImGui.SetNextItemWidth(Layout.ComboWidth(Engines.Select(e => e.Name)));
-        using (var combo = ImRaii.Combo("##engine", current.Name ?? config.Engine.ToString()))
-        {
-            if (combo.Success)
-            {
-                foreach (var (engine, name, description) in Engines)
-                {
-                    if (ImGui.Selectable($"{name} — {description}", engine == config.Engine) && engine != config.Engine)
-                    {
-                        config.Engine = engine;
-                        config.Save();
-                        Owner.TranslationQueue.SetTranslator(Owner.CreateTranslator());
-                        // 새 도구로 최근 대화를 다시 번역한다. 이전 번역은 남겨 두고 모델 이름으로 구분한다
-                        _ = Owner.TranslationQueue.RetranslateRecentAsync(Owner.ChatListener.Snapshot(), RetranslateCount);
-                    }
-                }
-            }
-        }
-        DrawEngineStatus(Owner.TranslationQueue);
-
-        ImGuiHelpers.ScaledDummy(8);
 
         DrawSendPlacement(config);
 
