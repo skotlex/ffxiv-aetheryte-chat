@@ -1,0 +1,127 @@
+# Aetheryte Chat
+
+파이널판타지 14 **일본 데이터센터**에서 플레이하는 한국어 사용자를 위한 채팅 번역 Dalamud 플러그인입니다.
+
+- **받기**: 게임 채팅으로 들어온 일본어를 한국어로 번역해 보여 줍니다.
+- **보내기**: 한국어로 입력하면 일본어로 번역하고, 뜻을 다시 한국어로 확인한 뒤 게임 채팅으로 보냅니다.
+
+> **주의**
+> - Square Enix와 관련 없는 비공식 도구입니다.
+> - 서드파티 도구는 파이널판타지 14 이용약관상 허용되지 않습니다. 사용에 따른 책임은 사용자에게 있습니다.
+> - 번역 도구에 따라 채팅 내용이 외부 서비스로 전송됩니다 — 아래 [개인정보와 사용량](#개인정보와-사용량)을 읽어 주세요.
+
+## 설치
+
+1. 게임 안에서 `/xlsettings` → **실험적 기능(Experimental)** 탭을 엽니다.
+2. **사용자 정의 플러그인 저장소(Custom Plugin Repositories)** 에 아래 주소를 넣고 `+` 를 누른 뒤 저장합니다.
+   ```
+   https://raw.githubusercontent.com/skotlex/ffxiv-aetheryte-chat/main/repo.json
+   ```
+3. `/xlplugins` 에서 **Aetheryte Chat** 을 찾아 설치합니다.
+4. `/achat` 으로 창을 엽니다. 처음에는 **번역 도구** 탭이 열립니다.
+
+## 번역 도구 고르기
+
+**번역 도구** 탭에서 하나를 고릅니다. 고른 도구의 준비 방법·설정·상태가 같은 탭에 나옵니다.
+
+| 도구 | 필요한 것 | 속도 (한 줄) | 특징 |
+| --- | --- | --- | --- |
+| **Claude CLI** | Claude 구독 (Pro·Max 등) | 약 2초 | 게임 용어·말투가 가장 자연스럽습니다. 권장 |
+| **Codex CLI** | ChatGPT 구독 (Plus·Pro 등) | 약 5~6초 | 한 줄에 쓰는 사용량이 Claude보다 훨씬 많습니다 |
+| **Ollama (로컬)** | GPU (VRAM 8GB 이상 권장) | 약 1초 | 무료. 채팅이 PC 밖으로 나가지 않습니다 |
+| **Papago (웹)** | 없음 | 1초 안팎 | 무료. 비공식 경로라 막힐 수 있고 게임 용어에 약합니다 |
+
+### Claude CLI
+
+1. [Claude Code](https://code.claude.com/docs/en/setup)를 설치합니다. PowerShell에서:
+   ```powershell
+   irm https://claude.ai/install.ps1 | iex
+   ```
+   (npm을 쓰신다면 `npm install -g @anthropic-ai/claude-code` 도 됩니다.)
+2. PowerShell에서 `claude` 를 한 번 실행해 구독 계정으로 로그인합니다.
+3. 번역 도구 탭에서 **다시 확인**을 누르면 `Claude CLI 준비됨` 으로 바뀝니다.
+
+설정: 모델(기본 `haiku` — 빠르고 사용량이 적어 권장), 생각 정도(effort), 제한 시간, 실행 파일 경로.
+
+### Codex CLI
+
+1. [Codex CLI](https://developers.openai.com/codex/cli)를 설치합니다: `npm install -g @openai/codex`
+2. PowerShell에서 `codex login` 으로 로그인합니다.
+3. 번역 도구 탭에서 **다시 확인**을 누릅니다.
+
+설정: 모델(비우면 Codex 기본), 생각 정도(reasoning effort, 기본 `low`), 제한 시간, 실행 파일 경로.
+
+### Ollama (로컬)
+
+1. [Ollama](https://ollama.com/download)를 설치하고 켜 둡니다.
+2. 번역 도구 탭에서 모델 옆의 **지금 받기**를 누르거나, PowerShell에서 `ollama pull gemma3:12b` 로 모델을 받습니다.
+3. 받은 뒤 상태가 `Ollama (gemma3:12b) 준비됨` 으로 바뀝니다.
+
+설정: 주소(다른 PC의 Ollama도 쓸 수 있습니다), 모델(받아 둔 모델 목록에서 고르기), 모델 유지 시간(keep_alive), 제한 시간.
+
+- 권장 모델 `gemma3:12b` 는 VRAM을 약 8GB 씁니다. 게임도 GPU 메모리를 쓰므로 여유가 없으면 더 작은 모델을 받아 바꿔 보세요
+  (작은 모델의 번역 품질은 시험하지 않았습니다).
+
+### Papago (웹)
+
+준비할 것이 없습니다. 다만 공식 API가 아니라 papago.naver.com 웹 화면의 주소를 부르므로 Naver가 바꾸거나 막으면 동작하지 않고,
+많이 쓰면 잠시 제한됩니다. 용어집을 쓸 수 없어 **보내기(한→일)에는 LLM 도구(Claude·Codex·Ollama)를 권합니다** —
+소리만 옮긴 오역은 '다시 한국어로' 확인에도 드러나지 않을 수 있습니다.
+
+## 용어집
+
+LLM 도구(Claude·Codex·Ollama)는 번역 도구 탭의 **용어집**을 번역 지시문에 넣어, 게임 용어를 유저들이 쓰는 말로 옮깁니다.
+한 줄에 `일본어 → 한국어` 하나씩 적습니다. 보낼 때(한→일)는 거꾸로 읽습니다.
+
+```
+零式 → 영식
+絶 → 절
+初見 → 초행
+```
+
+## 개인정보와 사용량
+
+- **Claude / Codex / Papago**: 번역할 채팅 내용(받은 대화와 보낼 글)이 각각 Anthropic / OpenAI / Naver 로 전송됩니다.
+  보낸 사람의 캐릭터 이름은 보내지 않지만, 대화 안에 적힌 이름은 그대로 전송됩니다.
+- **Ollama**: 지정한 주소의 Ollama(기본은 이 PC)에서만 처리합니다.
+- **Claude / Codex** 는 구독 사용량을 씁니다. 받은 채팅의 일본어 줄마다 번역하므로 붐비는 채널에서는 사용량이 빠르게 늘 수 있습니다.
+  **설정** 탭의 **번역할 채널**에서 필요 없는 채널(외치기·떠들기 등)을 꺼 두면 아낄 수 있습니다.
+- 이 플러그인은 API 키를 받거나 저장하지 않습니다. Claude·Codex는 PC에 로그인해 둔 CLI를 그대로 실행합니다.
+
+## 문제 해결
+
+| 증상 | 해결 |
+| --- | --- |
+| `claude.exe를 찾지 못했습니다` / `codex.exe를 찾지 못했습니다` | 설치했는데도 나오면 번역 도구 탭의 **실행 파일** 칸에 경로를 직접 넣습니다. PowerShell에서 `(Get-Command claude).Source` 로 경로를 볼 수 있습니다 (npm으로 설치했다면 `.cmd` 가 아닌 실제 `.exe` 경로가 필요합니다 — 비워 두면 자동으로 찾습니다) |
+| `로그인 안 됨` | 터미널에서 로그인한 뒤 상태 글자나 **다시 확인**을 누릅니다. 게임을 다시 켤 필요는 없습니다 |
+| `Ollama에 연결하지 못했습니다` | Ollama가 켜져 있는지, 주소가 맞는지 확인합니다 |
+| 번역이 자주 `제한 시간` 으로 실패 | 번역 도구 탭에서 제한 시간을 늘립니다. Ollama는 처음 모델을 올릴 때 몇 초 더 걸립니다 |
+| 한글 입력 중 스페이스를 누르면 마지막 글자가 두 번 들어감 (`사` + 스페이스 → `사사`) | Windows 설정 › 시간 및 언어 › 언어 및 지역 › 한국어 › 언어 옵션 › Microsoft 입력기 › 호환성 › **이전 버전의 Microsoft IME 사용** 을 끄고 게임을 다시 켭니다 |
+
+## 개발
+
+필요한 것: .NET 10 SDK, XIVLauncher로 한 번 실행한 Dalamud(또는 `DALAMUD_HOME` 환경 변수에 Dalamud 어셈블리 폴더).
+
+```powershell
+dotnet build -c Release
+```
+
+`src/AetheryteChat/bin/x64/Release/AetheryteChat/latest.zip` 이 배포 파일입니다. 개발 중에는 `/xlsettings` → 실험적 기능 →
+**Dev Plugin Locations** 에 `src/AetheryteChat/bin/x64/Debug/AetheryteChat.dll` 을 넣어 불러올 수 있습니다.
+
+게임 없이 번역 도구를 시험하는 콘솔:
+
+```powershell
+dotnet run --project tools/TranslatorConsole -- auth --engine codex
+dotnet run --project tools/TranslatorConsole -- ja2ko "零式4層、初見です。よろしくお願いします！"
+dotnet run --project tools/TranslatorConsole -- ko2ja --engine ollama --model gemma3:12b
+```
+
+### 배포
+
+`v` 로 시작하는 태그(예: `v0.1.0.0`)를 올리면 GitHub Actions 가 빌드해 Release 에 `latest.zip` 을 올리고
+`repo.json` 의 버전을 갱신합니다 (`.github/workflows/release.yml`).
+
+## 라이선스
+
+[AGPL-3.0](LICENSE)

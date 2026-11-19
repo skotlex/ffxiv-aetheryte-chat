@@ -1,0 +1,84 @@
+# v 로 시작하는 태그(예: v0.1.0.0)를 올리면 빌드해 GitHub Release 에 latest.zip 을 올리고,
+# 사용자 정의 플러그인 저장소용 repo.json 을 그 버전으로 갱신해 main 에 커밋한다.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: 태그에서 버전 읽기
+        id: version
+        run: |
+          $tag = '${{ github.ref_name }}'
+          if ($tag -notmatch '^v(\d+\.\d+\.\d+(\.\d+)?)$') { throw "태그는 v1.2.3 또는 v1.2.3.4 꼴이어야 합니다: $tag" }
+          "value=$($Matches[1])" >> $env:GITHUB_OUTPUT
+
+      # Dalamud.NET.Sdk 는 DALAMUD_HOME 의 Dalamud 어셈블리를 참조한다 (게임이 없는 빌드 서버라 직접 받는다)
+      - name: Dalamud 받기
+        run: |
+          Invoke-WebRequest https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile "$env:RUNNER_TEMP/dalamud.zip"
+          Expand-Archive "$env:RUNNER_TEMP/dalamud.zip" -DestinationPath "$env:RUNNER_TEMP/dalamud"
+          "DALAMUD_HOME=$env:RUNNER_TEMP/dalamud/" >> $env:GITHUB_ENV
+
+      - name: 빌드
+        run: dotnet build src/AetheryteChat/AetheryteChat.csproj -c Release -p:Version=${{ steps.version.outputs.value }}
+
+      - name: Release 만들기
+        uses: softprops/action-gh-release@v2
+        with:
+          files: src/AetheryteChat/bin/x64/Release/AetheryteChat/latest.zip
+          generate_release_notes: true
+
+      - name: repo.json 갱신
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $manifest = Get-Content src/AetheryteChat/bin/x64/Release/AetheryteChat/AetheryteChat.json -Raw | ConvertFrom-Json
+          $download = 'https://github.com/${{ github.repository }}/releases/latest/download/latest.zip'
+          $entry = [ordered]@{
+            Author                = $manifest.Author
+            Name                  = $manifest.Name
+            InternalName          = $manifest.InternalName
+            AssemblyVersion       = $manifest.AssemblyVersion
+            Description           = $manifest.Description
+            Punchline             = $manifest.Punchline
+            ApplicableVersion     = $manifest.ApplicableVersion
+            RepoUrl               = $manifest.RepoUrl
+            Tags                  = $manifest.Tags
+            DalamudApiLevel       = $manifest.DalamudApiLevel
+            LoadPriority          = $manifest.LoadPriority
+            AcceptsFeedback       = $manifest.AcceptsFeedback
+            IsHide                = $false
+            IsTestingExclusive    = $false
+            LastUpdate            = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            DownloadLinkInstall   = $download
+            DownloadLinkUpdate    = $download
+            DownloadLinkTesting   = $download
+          }
+          $json = ConvertTo-Json -InputObject @($entry) -Depth 5
+
+          git fetch origin main
+          git switch main
+          Set-Content repo.json $json -Encoding utf8NoBOM
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add repo.json
+          git commit -m "repo.json: ${{ github.ref_name }}"
+          git push origin main

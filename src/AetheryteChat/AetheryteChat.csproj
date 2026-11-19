@@ -2,7 +2,7 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
     <Version>0.0.0.1</Version>
-    <!-- 매니페스트 필드. Dalamud 공식 목록에는 올리지 않고 Dev Plugin 으로만 쓴다 (DESIGN 2절) -->
+    <!-- 매니페스트 필드. Dalamud 공식 목록 대신 이 저장소의 repo.json(사용자 정의 플러그인 저장소)으로 배포한다. 버전은 릴리스 태그에서 정한다 (.github/workflows/release.yml) -->
     <Author>skotlex</Author>
     <Name>Aetheryte Chat</Name>
     <Punchline>일본 DC 채팅을 한국어로 읽고, 한국어로 써서 일본어로 보냅니다.</Punchline>
