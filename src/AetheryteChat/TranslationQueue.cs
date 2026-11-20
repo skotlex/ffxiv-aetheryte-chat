@@ -566,21 +566,45 @@ internal sealed partial class TranslationQueue : IDisposable
 
         try
         {
-            var result = await translator.TranslateBatchAsync([.. groups.Select(g => g.Text)], TranslationDirection.JaToKo, ct);
-            for (var i = 0; i < groups.Count; i++)
-                Finish(groups[i].Text, groups[i].Items, translator, result.Texts[i], result.Engine);
-        }
-        catch (TranslationException e) when (e.IsMalformedBatch)
-        {
-            // 도구는 답했지만 줄 수가 맞지 않았다 — 줄마다 다시 번역한다. 채팅 내용이 로그에 남지 않게 줄 수만 적는다
-            Plugin.Log.Warning($"묶음 번역의 답을 줄에 맞추지 못해 줄마다 다시 번역합니다 ({groups.Count}줄)");
-            foreach (var (text, items) in groups)
-                await TranslateOneAsync(text, items, translator, ct);
+            if (await TranslateBatchAsync(translator, [.. groups.Select(g => g.Text)], ct) is { } result)
+            {
+                for (var i = 0; i < groups.Count; i++)
+                    Finish(groups[i].Text, groups[i].Items, translator, result.Texts[i], result.Engine);
+                return;
+            }
         }
         catch (Exception e)
         {
             HandleFailure(e, groups.SelectMany(g => g.Items), translator, "받은 채팅 묶음 번역 실패");
+            return;
         }
+
+        // 두 번 모두 줄에 맞지 않는 답이었다 — 줄마다 번역한다
+        foreach (var (text, items) in groups)
+            await TranslateOneAsync(text, items, translator, ct);
+    }
+
+    /// <summary>
+    /// 묶음 번역. 답이 줄에 맞지 않으면(줄 수가 다르거나 원문을 그대로 돌려줌) 한 번 더 보낸다 — 이런 실패는 드물고
+    /// 매번 달라서, 다시 보내는 편이 줄마다 번역(줄 수만큼 호출)하는 것보다 빠르다. 두 번 다 맞지 않으면 null
+    /// </summary>
+    private static async Task<BatchTranslationResult?> TranslateBatchAsync(
+        ITranslator translator, IReadOnlyList<string> texts, CancellationToken ct)
+    {
+        for (var attempt = 1; attempt <= 2; attempt++)
+        {
+            try
+            {
+                return await translator.TranslateBatchAsync(texts, TranslationDirection.JaToKo, ct);
+            }
+            catch (TranslationException e) when (e.IsMalformedBatch)
+            {
+                // 채팅 내용이 로그에 남지 않게 줄 수만 적는다
+                Plugin.Log.Warning($"묶음 번역의 답이 줄에 맞지 않습니다 ({texts.Count}줄, {attempt}번째)" +
+                                   (attempt == 1 ? " — 다시 보냅니다" : " — 줄마다 번역합니다"));
+            }
+        }
+        return null;
     }
 
     /// <summary>원문 하나를 번역해 같은 원문의 줄들에 붙인다</summary>
