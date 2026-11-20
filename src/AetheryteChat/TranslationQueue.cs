@@ -14,7 +14,7 @@ internal enum EngineStatus
 
 /// <summary>
 /// 받은 채팅을 백그라운드에서 번역한다. 게임 스레드는 기다리지 않는다.
-/// 아직 한 줄씩 번역한다 — 묶음 번역·같은 문장 캐시·실패했을 때의 예비 엔진은 붙이지 않았다.
+/// 같은 원문을 이미 번역했으면 도구를 부르지 않고 그 번역을 쓴다 (<see cref="TranslationCache"/>).
 /// </summary>
 internal sealed partial class TranslationQueue : IDisposable
 {
@@ -33,6 +33,9 @@ internal sealed partial class TranslationQueue : IDisposable
 
     // 설정 탭에서 엔진을 바꾸면 갈아 끼운다. 이미 대기열에 넣은 번역은 넣을 때의 엔진으로 끝난다
     private volatile ITranslator _translator;
+
+    // 지금 도구로 번역한 원문과 번역. 도구를 바꾸면 새로 쓴다
+    private volatile TranslationCache _cache;
     private int _loginCheckId; // 엔진을 바꾼 뒤 늦게 끝난 이전 엔진의 로그인 확인 결과를 버리는 데 쓴다
     private readonly CancellationTokenSource _cts = new();
 
@@ -64,6 +67,7 @@ internal sealed partial class TranslationQueue : IDisposable
         _createTranslator = createTranslator;
         _sampleLog = sampleLog;
         _translator = createTranslator();
+        _cache = new TranslationCache(_translator);
         _isChannelEnabled = isChannelEnabled;
         _loginCheck = CheckLoginAsync(_translator, ++_loginCheckId);
         for (var i = 0; i < MaxConcurrent; i++)
@@ -147,6 +151,7 @@ internal sealed partial class TranslationQueue : IDisposable
     {
         var translator = _createTranslator();
         _translator = translator;
+        _cache = new TranslationCache(translator);
         Status = EngineStatus.Checking;
         StatusDetail = null;
         _loginCheck = CheckLoginAsync(translator, ++_loginCheckId);
@@ -206,10 +211,17 @@ internal sealed partial class TranslationQueue : IDisposable
 
     /// <summary>
     /// 대기열에 넣을 때의 도구로 이름표를 붙이고 대기열에 넣는다 — 이름표와 실제로 번역한 도구가 어긋나지 않게.
+    /// 이 도구로 같은 원문을 번역해 두었으면 대기열에 넣지 않고 바로 끝낸다.
     /// 대기열이 넘치면 한 줄을 건너뛴다 (주변 채널의 가장 오래된 줄, 없으면 가장 오래된 줄)
     /// </summary>
     private void Start(ChatLine line, ITranslator translator)
     {
+        if (CacheFor(translator)?.TryGet(line.Message, out var cached) == true)
+        {
+            line.AddTranslation(translator.ShortName).Complete(TranslationState.Done, cached);
+            return;
+        }
+
         var job = new Job(line, line.AddTranslation(translator.ShortName), translator, DateTime.UtcNow,
             TranslateChannels.IsAmbient(line.Channel));
         lock (_waiting)
@@ -241,6 +253,9 @@ internal sealed partial class TranslationQueue : IDisposable
             return next;
         }
     }
+
+    /// <summary>이 도구의 캐시. 그사이 도구를 바꿨으면 null — 이전 도구의 번역이 새 도구의 캐시에 섞이지 않게</summary>
+    private TranslationCache? CacheFor(ITranslator translator) => _cache is var c && c.Owner == translator ? c : null;
 
     private static void Skip(Job job) => job.Target.Complete(TranslationState.Skipped, "채팅이 많아 건너뜀");
 
@@ -436,6 +451,9 @@ internal sealed partial class TranslationQueue : IDisposable
             }
             var result = await translator.TranslateAsync(line.Message, TranslationDirection.JaToKo, ct);
             target.Complete(TranslationState.Done, result.Text, result.Engine);
+            // 1순위 도구가 번역한 것만 기억한다 — 예비 도구의 번역이 1순위가 돌아온 뒤에도 계속 쓰이지 않게
+            if ((result.Engine ?? translator.ShortName) == translator.ShortName)
+                CacheFor(translator)?.Add(line.Message, result.Text);
             _sampleLog.Incoming(line.Channel, line.Message, result.Engine ?? translator.ShortName, done: true, result.Text);
         }
         catch (OperationCanceledException)
