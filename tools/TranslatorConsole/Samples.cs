@@ -8,14 +8,16 @@ using System.Text.RegularExpressions;
 using AetheryteChat.Translation;
 
 /// <summary>
-/// 게임 PC 의 표본 기록(samples-*.jsonl, 플러그인의 SampleLog)으로 용어 후보를 뽑고(terms),
+/// 게임 PC 의 표본 기록(samples-*.jsonl, 플러그인의 SampleLog)으로 용어 후보를 뽑고(terms), 대화 전체를 원문별로 모으고(lines),
 /// 평가 묶음을 만들고(evalset), 엔진·용어집별 용어 적중률을 잰다(eval).
+/// 표본 폴더의 rejected-terms.txt (한 줄에 말 하나, '#' 뒤는 메모) 에 적은 말은 검토했지만 넣지 않기로 한 것이라 terms 에서 뺀다
 /// 결과 파일은 표본 폴더에 쓴다 — 다른 플레이어의 대화가 들어 있으므로 저장소에 넣지 않는다
 /// </summary>
 internal static partial class Samples
 {
     public const string Usage = """
         TranslatorConsole samples terms <표본 폴더> [--min-count N]      용어 후보 → terms.tsv, 엔진끼리 다른 번역 등 → disagreements.tsv
+        TranslatorConsole samples lines <표본 폴더>                      받은 채팅 원문별 횟수·번역·맞은 용어 → lines.tsv (대화 전체 검토용)
         TranslatorConsole samples evalset <표본 폴더> [--max N]          용어집 용어가 든 줄 → evalset.jsonl
         TranslatorConsole samples eval <evalset.jsonl> [--engine e …]    용어 적중률 (--glossary 파일 / --no-glossary 로 전후 비교)
         """;
@@ -35,6 +37,7 @@ internal static partial class Samples
         return command switch
         {
             "terms" => Terms(path, glossary, options.GetValueOrDefault("--min-count", 3)),
+            "lines" => Lines(path, glossary),
             "evalset" => EvalSet(path, glossary, options.GetValueOrDefault("--max", 200)),
             "eval" => await EvalAsync(path, createTranslator()),
             _ => Fail($"알 수 없는 samples 명령: {command}\n{Usage}"),
@@ -154,11 +157,12 @@ internal static partial class Samples
             .GroupBy(r => r.Get("src")!, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Select(r => $"{r.Engine}: {r.Get("out")}").Distinct().ToList(), StringComparer.Ordinal);
 
+        var rejected = ReadRejected(directory);
         var stats = new Dictionary<string, TermStats>(StringComparer.Ordinal);
         var texts = incoming.Select(r => r.Get("src")!).Concat(outgoing.Select(r => r.Get("ja")!));
         foreach (var text in texts)
         {
-            foreach (var term in Candidates(text, glossary).Distinct())
+            foreach (var term in Candidates(text, glossary).Distinct().Where(t => !rejected.Contains(t)))
             {
                 if (!stats.TryGetValue(term, out var s))
                     stats[term] = s = new TermStats();
@@ -186,7 +190,7 @@ internal static partial class Samples
                     Cell(string.Join(" || ", s.Translations))]));
             }
         }
-        Console.Error.WriteLine($"용어 후보 {rows.Count}개 (최소 {minCount}번, 용어집에 있는 말 {glossary.Count}개는 뺌) → {termsPath}");
+        Console.Error.WriteLine($"용어 후보 {rows.Count}개 (최소 {minCount}번, 용어집에 있는 말 {glossary.Count}개·넣지 않기로 한 말 {rejected.Count}개는 뺌) → {termsPath}");
         foreach (var (term, s) in rows.Take(30))
             Console.WriteLine($"{s.Count,5} {s.Texts.Count,5}  {term}");
 
@@ -199,7 +203,64 @@ internal static partial class Samples
                 w.WriteLine(string.Join('\t', d.Type, d.Score.ToString("0.00", CultureInfo.InvariantCulture), d.Channel, Cell(d.Text), Cell(d.Detail)));
         }
         Console.Error.WriteLine($"품질 신호 {disagreements.Count}건 (엔진끼리 다름 {disagreements.Count(d => d.Type == "engines")}, " +
-                                $"오역 제보 {disagreements.Count(d => d.Type == "flag")}, 역번역 차이 {disagreements.Count(d => d.Type == "back")}) → {disagreementsPath}");
+                                $"역번역 차이 {disagreements.Count(d => d.Type == "back")}) → {disagreementsPath}");
+        return 0;
+    }
+
+    /// <summary>
+    /// 검토했지만 용어집에 넣지 않기로 한 말 (표본 폴더의 rejected-terms.txt). 한 줄에 말 하나, '#' 뒤는 메모라 무시한다.
+    /// 비교는 후보와 같은 형태(NFKC)로 한다
+    /// </summary>
+    private static HashSet<string> ReadRejected(string directory)
+    {
+        var path = Path.Combine(directory, "rejected-terms.txt");
+        if (!File.Exists(path))
+            return [];
+        return File.ReadLines(path, Encoding.UTF8)
+            .Select(l => (l.IndexOf('#') is var at && at >= 0 ? l[..at] : l).Trim().Normalize(NormalizationForm.FormKC))
+            .Where(l => l.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    // ───────────────────────── lines ─────────────────────────
+
+    /// <summary>
+    /// 받은 채팅을 원문별로 모은다: 횟수(같은 원문을 다른 도구로 다시 번역한 것은 한 번), 채널, 도구별 번역, 그 줄에 맞은 용어.
+    /// 많이 나온 줄부터. 대화 전체를 읽고 용어집에 넣을 말·용어집이 있는데도 틀린 번역을 고르는 데 쓴다
+    /// </summary>
+    private static int Lines(string directory, Glossary glossary)
+    {
+        var records = ReadRecords(directory);
+        var incoming = records.Where(r => r.Kind == "in" && r.Get("src") is not null).ToList();
+        var counts = UniqueIncoming(records).GroupBy(r => r.Get("src")!, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+
+        var rows = incoming.GroupBy(r => r.Get("src")!, StringComparer.Ordinal)
+            .Select(g => (
+                Src: g.Key,
+                Count: counts.GetValueOrDefault(g.Key, 1),
+                Channels: string.Join(",", g.Select(r => r.Channel).Distinct()),
+                Last: g.Max(r => r.Time),
+                Outs: g.Where(r => r.Get("state") == "done" && r.Get("out") is not null)
+                    .GroupBy(r => r.Engine).Select(e => $"{e.Key}: {e.Last().Get("out")}").ToList(),
+                Skipped: g.All(r => r.Get("state") != "done")))
+            .OrderByDescending(r => r.Count).ThenByDescending(r => r.Last)
+            .ToList();
+
+        var path = Path.Combine(directory, "lines.tsv");
+        using (var w = new StreamWriter(path, false, new UTF8Encoding(false)))
+        {
+            w.WriteLine("count	ch	last	src	translations	glossary");
+            foreach (var r in rows)
+            {
+                var terms = glossary.Match(r.Src, TranslationDirection.JaToKo);
+                w.WriteLine(string.Join('\t',
+                    r.Count.ToString(), r.Channels, r.Last.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture), Cell(r.Src),
+                    Cell(r.Skipped ? "(번역 안 됨)" : string.Join(" || ", r.Outs)),
+                    Cell(Glossary.Format(terms, TranslationDirection.JaToKo).Replace("\n", " / "))));
+            }
+        }
+        Console.Error.WriteLine($"원문 {rows.Count}개 (받은 채팅 {incoming.Count}건) → {path}");
         return 0;
     }
 
@@ -220,7 +281,7 @@ internal static partial class Samples
     private sealed record Disagreement(string Type, double Score, string Channel, string Text, string Detail);
 
     /// <summary>
-    /// 사람이 볼 만한 줄: 같은 원문을 도구마다 다르게 옮긴 것, 오역 제보, 다시 옮긴 한국어가 쓴 한국어와 많이 다른 보낸 글.
+    /// 사람이 볼 만한 줄: 같은 원문을 도구마다 다르게 옮긴 것, 다시 옮긴 한국어가 쓴 한국어와 많이 다른 보낸 글.
     /// score 는 비슷한 정도(0~1, 글자 두 개씩 묶어 비교). 낮을수록 위에 둔다
     /// </summary>
     private static List<Disagreement> Disagreements(List<Record> records)
@@ -239,9 +300,6 @@ internal static partial class Samples
                 list.Add(new("engines", score, byEngine[0].Channel, g.Key, string.Join(" | ", byEngine.Select(r => $"{r.Engine}: {r.Get("out")}"))));
         }
 
-        foreach (var r in records.Where(r => r.Kind == "flag"))
-            list.Add(new("flag", 0, r.Channel, r.Get("src") ?? "", $"{r.Engine}: {r.Get("out")}"));
-
         foreach (var r in records.Where(r => r.Kind == "out" && r.Get("ko") is not null && r.Get("back") is not null))
         {
             var score = Similarity(r.Get("ko")!, r.Get("back")!);
@@ -249,7 +307,7 @@ internal static partial class Samples
                 list.Add(new("back", score, r.Channel, r.Get("ko")!, $"ja: {r.Get("ja")} | back: {r.Get("back")}"));
         }
 
-        return list.OrderBy(d => d.Type == "flag" ? 0 : 1).ThenBy(d => d.Score).ToList();
+        return list.OrderBy(d => d.Score).ToList();
     }
 
     /// <summary>글자 두 개씩 묶은 것의 Dice 계수. 공백·문장부호는 빼고 비교한다</summary>

@@ -241,20 +241,24 @@ dotnet run --project tools/TranslatorConsole -- ja2ko --glossary my-glossary.txt
 `%APPDATA%\XIVLauncher\pluginConfigs\AetheryteChat.json` 에 직접 적어야 켜집니다. 값이 없으면 아무것도 기록하지 않습니다.
 
 ```jsonc
-"SampleLogDirectory": "C:\\Users\\<사용자>\\OneDrive\\AetheryteSamples"
+"SampleLogDirectory": "C:\\...\\FFXIV Aetheryte Chat\\samples"
 ```
 
-- 그 폴더에 날짜별 `samples-YYYY-MM-DD.jsonl` 로 받은 채팅의 번역(`in`), 보낸 글(`out`), '오역 제보'(`flag`)를 남깁니다.
-  켜 두면 받은 채팅 창의 번역 줄을 오른쪽 클릭해 **오역 제보**를 할 수 있습니다.
+- 그 폴더에 날짜별 `samples-YYYY-MM-DD.jsonl` 로 받은 채팅과 번역(`in`), 보낸 글(`out`)을 남깁니다.
+  받은 채팅은 캐시로 바로 보여 준 줄(`"cached": true`)과 채팅이 많아 건너뛴 줄(`"state": "skipped"`)도 남겨,
+  같은 매크로가 몇 번 나왔는지와 번역하지 못한 줄의 말까지 볼 수 있습니다.
 - 보낸 사람은 남기지 않고, 본문 속 플레이어 이름은 그 세션에서 본 이름(전체 이름, 3글자 이상인 이름·성)을 `<이름>` 으로 가립니다.
   가타카나 애칭(タロさん 등)이나 한글로 옮긴 이름은 가리지 못합니다.
-- 다른 플레이어의 대화가 들어 있으므로 **저장소 밖에 두고 커밋하지 마세요**.
+- 다른 플레이어의 대화가 들어 있으므로 **커밋하지 마세요**. 저장소 안에 둘 때는 `samples/` 를 쓰면 `.gitignore` 에 들어 있습니다.
 
 개발 PC 에서는 콘솔로 용어 후보를 뽑고 효과를 잽니다. 결과 파일은 모두 표본 폴더에 씁니다.
 
 ```powershell
-# 용어 후보(가타카나·한자 2자 이상, 영문 약어) → terms.tsv, 엔진끼리 다른 번역·오역 제보·역번역 차이 → disagreements.tsv
+# 용어 후보(가타카나·한자 2자 이상, 영문 약어) → terms.tsv, 엔진끼리 다른 번역·역번역 차이 → disagreements.tsv
+# 표본 폴더의 rejected-terms.txt (한 줄에 말 하나, '#' 뒤는 메모) 에 적은 말은 검토했지만 넣지 않기로 한 것이라 뺍니다
 dotnet run --project tools/TranslatorConsole -- samples terms <표본 폴더> [--min-count 3]
+# 받은 채팅을 원문별로 모아 횟수·채널·번역·맞은 용어 → lines.tsv (대화 전체를 읽고 용어를 고를 때)
+dotnet run --project tools/TranslatorConsole -- samples lines <표본 폴더>
 # 용어집 용어가 든 줄을 평가 묶음으로 고정 → evalset.jsonl
 dotnet run --project tools/TranslatorConsole -- samples evalset <표본 폴더> [--max 200]
 # 용어 적중률·시간·입력 토큰. --glossary <파일> / --no-glossary 로 용어집을 바꾸기 전후를 비교
