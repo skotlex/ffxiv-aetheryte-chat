@@ -27,7 +27,12 @@ internal static class AnswerJson
     }
 
     /// <exception cref="TranslationException">답을 읽지 못했거나 줄 수가 <paramref name="count"/> 와 다름 (IsMalformedBatch)</exception>
-    public static IReadOnlyList<string> ExtractTranslations(string answer, int count)
+    /// <remarks>
+    /// 일→한 이면 히라가나가 남은 줄이 있을 때도 줄에 맞지 않는 답으로 본다 — 여러 줄을 받으면 모델이 가끔 원문을 그대로,
+    /// 또는 용어집의 말만 바꿔 돌려준다 (2026-11-20 Claude haiku, 10줄 묶음 12번 중 1번). 한국어 번역에는 히라가나가 들어갈 일이
+    /// 거의 없고, 가타카나는 이름·이모티콘에 쓰일 수 있어 보지 않는다
+    /// </remarks>
+    public static IReadOnlyList<string> ExtractTranslations(string answer, int count, TranslationDirection direction)
     {
         var start = answer.IndexOf('{');
         var end = answer.LastIndexOf('}');
@@ -44,6 +49,8 @@ internal static class AnswerJson
                 .ToList();
             if (texts.Count != count || texts.Any(t => t is null))
                 throw Malformed($"{count}줄을 보냈는데 답이 {texts.Count}줄입니다: {Trim(answer)}");
+            if (direction == TranslationDirection.JaToKo && texts.Count(t => t!.Any(IsHiragana)) is > 0 and var left)
+                throw Malformed($"{count}줄 가운데 {left}줄이 번역되지 않았습니다: {Trim(answer)}");
             return [.. texts.Select(t => t!)];
         }
         catch (JsonException e)
@@ -51,6 +58,8 @@ internal static class AnswerJson
             throw new TranslationException($"답의 JSON을 읽지 못했습니다: {Trim(answer)}", e) { IsMalformedBatch = true };
         }
     }
+
+    private static bool IsHiragana(char c) => c is >= 'ぁ' and <= 'ゟ';
 
     private static TranslationException Malformed(string message) => new(message) { IsMalformedBatch = true };
 

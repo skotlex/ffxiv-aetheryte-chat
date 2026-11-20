@@ -57,9 +57,9 @@ public static class Prompts
 
             Rules:
             - Translate every line on its own, in the same order, using the other lines only as context. Exactly one translation per <line>: never merge, split, drop or reorder lines, even if a line is very short or only symbols.
-            - The translation is always written in {{to}}. Never return the source text unchanged, never answer or comment on it.
+            - Every translation is written entirely in {{to}}. A string still in {{from}} is always wrong: never copy a line, never return it with only the glossary terms replaced, never answer or comment on it.
             - Keep the speaker's tone and politeness level. Keep it short and natural like real game chat.
-            - Translate FFXIV terms the way players say them. When a <glossary> is given, use its {{to}} terms.
+            - Translate FFXIV terms the way players say them. When a <glossary> is given, use its {{to}} terms. The glossary only picks words: the rest of each line still has to be translated.
             - Keep player names, numbers, emoticons, symbols and raid markers (A B C D, 1 2 3 4, MT ST H1 H2 D1 D2 D3 D4) as they are.
             - Output only one JSON object and nothing else, no code fences: {"translations": ["<line 1 in {{to}}>", "<line 2 in {{to}}>", ...]} with exactly as many strings as there are <line> tags.
             """;
@@ -71,7 +71,8 @@ public static class Prompts
     public static string BatchUserTurn(IReadOnlyList<string> texts, IReadOnlyList<GlossaryEntry> terms, TranslationDirection direction)
     {
         var lines = string.Join('\n', texts.Select((t, i) => $"<line n=\"{i + 1}\">{t}</line>"));
-        var body = $"<lines count=\"{texts.Count}\">\n{lines}\n</lines>";
+        var (_, to) = Languages(direction);
+        var body = $"<lines count=\"{texts.Count}\">\n{lines}\n</lines>\nTranslate all {texts.Count} lines into {to}.";
         return terms.Count == 0 ? body : $"<glossary>\n{Glossary.Format(terms, direction)}\n</glossary>\n{body}";
     }
 

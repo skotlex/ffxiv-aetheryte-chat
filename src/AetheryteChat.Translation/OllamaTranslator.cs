@@ -181,7 +181,7 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
         };
         var (content, elapsed, input, output) =
             await ChatAsync(Prompts.ForBatch(direction), Prompts.BatchUserTurn(texts, terms, direction), schema, ct);
-        return new BatchTranslationResult(AnswerJson.ExtractTranslations(content, texts.Count), elapsed, input, output);
+        return new BatchTranslationResult(AnswerJson.ExtractTranslations(content, texts.Count, direction), elapsed, input, output);
     }
 
     /// <summary>지시문과 사용자 메시지로 /api/chat 을 한 번 부르고 답(message.content)을 돌려준다</summary>

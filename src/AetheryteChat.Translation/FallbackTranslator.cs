@@ -157,7 +157,7 @@ public sealed class FallbackTranslator : ITranslator
 
     /// <summary>
     /// 여러 줄을 한 번에 — 도구를 고르고 넘어가는 규칙은 <see cref="TranslateAsync"/> 와 같다.
-    /// 다만 답의 줄 수가 맞지 않으면(IsMalformedBatch) 도구 탓이 아니므로 건너뛰지 않고 그대로 올린다 — 부르는 쪽이 줄마다 다시 번역한다
+    /// 다만 답이 줄에 맞지 않으면(IsMalformedBatch) 도구 탓이 아니므로 건너뛰지 않고 그대로 올린다 — 부르는 쪽이 다시 보내거나 줄마다 번역한다
     /// </summary>
     public async Task<BatchTranslationResult> TranslateBatchAsync(
         IReadOnlyList<string> texts, TranslationDirection direction, CancellationToken ct = default)

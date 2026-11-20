@@ -74,7 +74,7 @@ public interface ITranslator
     /// 기본 구현은 한 줄씩 차례로 번역한다 — 지시문을 넣을 수 없는 도구(Papago)는 줄을 합쳐 보내면 줄이 어긋날 수 있어서
     /// </summary>
     /// <exception cref="TranslationException">
-    /// 실행 실패·시간 초과 등. 답의 줄 수가 맞지 않거나 읽지 못했으면 <see cref="TranslationException.IsMalformedBatch"/>
+    /// 실행 실패·시간 초과 등. 답의 줄 수가 맞지 않거나, 번역되지 않은 줄이 있거나, 읽지 못했으면 <see cref="TranslationException.IsMalformedBatch"/>
     /// </exception>
     async Task<BatchTranslationResult> TranslateBatchAsync(
         IReadOnlyList<string> texts,
@@ -103,7 +103,8 @@ public sealed class TranslationException(string message, Exception? inner = null
     public bool IsAuthError { get; init; }
 
     /// <summary>
-    /// 여러 줄을 한 번에 번역했는데 답의 줄 수가 맞지 않거나 형식을 읽지 못했다 — 도구는 멀쩡하니 줄마다 다시 번역하면 된다
+    /// 여러 줄을 한 번에 번역했는데 답의 줄 수가 맞지 않거나, 번역되지 않은 줄이 있거나, 형식을 읽지 못했다 —
+    /// 도구는 멀쩡하니 다시 보내거나 줄마다 번역하면 된다
     /// </summary>
     public bool IsMalformedBatch { get; init; }
 }

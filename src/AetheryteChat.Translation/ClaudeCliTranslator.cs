@@ -78,7 +78,7 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
         var terms = options.Glossary.Match(Prompts.JoinForGlossary(texts), direction);
         var (answer, elapsed, input, output) =
             await AskAsync(Prompts.ForBatch(direction), Prompts.BatchUserTurn(texts, terms, direction), ct);
-        return new BatchTranslationResult(AnswerJson.ExtractTranslations(answer, texts.Count), elapsed, input, output);
+        return new BatchTranslationResult(AnswerJson.ExtractTranslations(answer, texts.Count, direction), elapsed, input, output);
     }
 
     /// <summary>지시문과 사용자 메시지로 CLI 를 한 번 실행하고 모델의 답(봉투 안의 result)을 돌려준다</summary>
