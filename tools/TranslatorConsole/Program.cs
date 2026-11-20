@@ -79,7 +79,7 @@ async Task EnsureOllamaAsync(string ollamaEndpoint, CancellationToken ct)
         ?? throw new TranslationException(
             "ollama.exe를 찾지 못했습니다 — 게임 속 번역 도구 탭에서 Ollama를 설치하거나 --ollama-exe 로 경로를 지정해 주세요.");
     Console.Error.WriteLine($"Ollama 서버를 켭니다: {path} (콘솔이 끝나면 꺼집니다)");
-    ollamaServer = OllamaServer.Start(path, ollamaEndpoint);
+    ollamaServer = OllamaServer.Start(path, ollamaEndpoint, OllamaServer.ParallelForThisPc);
     await ollamaServer.WaitUntilReadyAsync(ollamaEndpoint, TimeSpan.FromSeconds(30), ct);
 }
 

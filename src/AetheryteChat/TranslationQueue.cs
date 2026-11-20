@@ -19,8 +19,12 @@ internal enum EngineStatus
 /// </summary>
 internal sealed partial class TranslationQueue : IDisposable
 {
-    // 붐비는 채널에서 CLI 프로세스가 한꺼번에 뜨지 않게 번역하는 작업자 수를 묶는다
-    private const int MaxConcurrent = 2;
+    // 번역 작업자 수. 실제로 동시에 번역하는 수는 도구마다 정하고(ITranslator.MaxConcurrency, CLI 는 2 — 프로세스가 한꺼번에
+    // 많이 뜨지 않게, Ollama 는 서버의 동시 처리 수), 이 값을 넘지 않는다
+    private const int MaxWorkers = 3;
+
+    // 지금 도구의 동시 번역 자리. 도구를 바꾸면 새로 만든다 — 이전 도구로 번역 중인 작업은 가져간 자리에 돌려준다
+    private volatile SemaphoreSlim _slots;
 
     // 번역을 기다리는 묶음. 채팅이 번역보다 빨리 들어오면(림사의 외치기 등) 한없이 밀려 몇 분 전 대화를 번역하게 되므로
     // 묶음 수와 기다리는 시간을 묶고, 넘치면 주변 채널(말하기·떠들기·외치기·초보자)의 오래된 묶음부터 건너뛴다.
@@ -117,9 +121,10 @@ internal sealed partial class TranslationQueue : IDisposable
         _sampleLog = sampleLog;
         _translator = createTranslator();
         _cache = new TranslationCache(_translator);
+        _slots = NewSlots(_translator);
         _isChannelEnabled = isChannelEnabled;
         _loginCheck = CheckLoginAsync(_translator, ++_loginCheckId);
-        for (var i = 0; i < MaxConcurrent; i++)
+        for (var i = 0; i < MaxWorkers; i++)
             _ = Task.Run(() => WorkAsync(_cts.Token));
     }
 
@@ -201,6 +206,7 @@ internal sealed partial class TranslationQueue : IDisposable
         var translator = _createTranslator();
         _translator = translator;
         _cache = new TranslationCache(translator);
+        _slots = NewSlots(translator);
         Status = EngineStatus.Checking;
         StatusDetail = null;
         _loginCheck = CheckLoginAsync(translator, ++_loginCheckId);
@@ -347,16 +353,26 @@ internal sealed partial class TranslationQueue : IDisposable
             while (true)
             {
                 await _jobAdded.WaitAsync(ct);
-                while (true)
+                // 자리가 날 때까지 묶음을 꺼내지 않는다 — 기다리는 동안 같은 사람의 줄이 그 묶음에 더해질 수 있게
+                var slots = _slots;
+                await slots.WaitAsync(ct);
+                try
                 {
-                    if (TakeNext(out var retryIn) is { } job)
+                    while (true)
                     {
-                        await TranslateJobAsync(job, ct);
-                        break;
+                        if (TakeNext(out var retryIn) is { } job)
+                        {
+                            await TranslateJobAsync(job, ct);
+                            break;
+                        }
+                        if (retryIn is not { } delay)
+                            break;
+                        await Task.Delay(delay < MinRetryDelay ? MinRetryDelay : delay, ct);
                     }
-                    if (retryIn is not { } delay)
-                        break;
-                    await Task.Delay(delay < MinRetryDelay ? MinRetryDelay : delay, ct);
+                }
+                finally
+                {
+                    slots.Release();
                 }
             }
         }
@@ -367,6 +383,12 @@ internal sealed partial class TranslationQueue : IDisposable
     }
 
     private static readonly TimeSpan MinRetryDelay = TimeSpan.FromMilliseconds(10);
+
+    private static SemaphoreSlim NewSlots(ITranslator translator)
+    {
+        var n = Math.Clamp(translator.MaxConcurrency, 1, MaxWorkers);
+        return new SemaphoreSlim(n, n);
+    }
 
     private void AddBacklog(ChatLine line)
     {

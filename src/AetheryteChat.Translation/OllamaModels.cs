@@ -39,7 +39,7 @@ public static class OllamaModels
     // 모델 받기는 수 분 걸릴 수 있어 HttpClient 기본 제한 시간(100초)을 쓰지 않는다. 멈추는 것은 취소로 한다
     private static readonly HttpClient PullHttp = new() { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
 
-    /// <summary>한↔일 게임 용어까지 맞게 옮긴 모델 (받을 때 약 8.2GB, 올리면 약 8.6GB — 동시 처리 2(OllamaServer.NumParallel) 기준)</summary>
+    /// <summary>한↔일 게임 용어까지 맞게 옮긴 모델 (받을 때 약 8.2GB, 올리면 약 8.6GB — 동시 처리 2 기준, 16GB 이상 카드의 동시 처리 3 이면 약 9.7GB. OllamaServer.ParallelFor)</summary>
     public const string LargeModel = "gemma3:12b";
 
     /// <summary>

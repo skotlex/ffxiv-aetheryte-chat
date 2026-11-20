@@ -74,6 +74,9 @@ public sealed class FallbackTranslator : ITranslator
 
     public string NotReadyHint => Primary.Translator.NotReadyHint;
 
+    /// <summary>1순위 도구의 동시 수 (예비 도구로 넘어가도 그대로 쓴다)</summary>
+    public int MaxConcurrency => Primary.Translator.MaxConcurrency;
+
     /// <summary>로그인 버튼으로 로그인할 도구: 로그인이 안 된 첫 도구 가운데 플러그인에서 로그인할 수 있는 것</summary>
     public Member? LoginTarget =>
         _members.FirstOrDefault(m => m.Status == FallbackMemberStatus.NotLoggedIn && m.Translator.CanLogin);

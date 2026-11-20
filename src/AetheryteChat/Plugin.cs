@@ -209,6 +209,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         var options = Configuration.Ollama.ToOptions(glossary);
         options.Preload &= primary;
+        options.MaxConcurrency = OllamaServer.ParallelForThisPc; // 플러그인이 켜는 서버의 동시 처리 수와 같게
         // 꺼져 있으면 창 없이 켠다 (Ollama 앱의 환영 화면·작업 표시줄 아이콘 없이)
         options.EnsureServerAsync = ct => OllamaHost.EnsureServerAsync(options.Endpoint, ct);
         return new OllamaTranslator(options);

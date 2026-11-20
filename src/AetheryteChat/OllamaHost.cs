@@ -49,7 +49,7 @@ internal sealed class OllamaHost(string pluginConfigDirectory) : IDisposable
             StopServerLocked(); // 꺼진 채 남은 것을 치운다
             var executable = OllamaServer.FindExecutable(ManagedExecutable)
                 ?? throw new TranslationException("Ollama가 설치되어 있지 않습니다 — '번역 도구' 탭에서 설치해 주세요.");
-            var server = OllamaServer.Start(executable, endpoint);
+            var server = OllamaServer.Start(executable, endpoint, OllamaServer.ParallelForThisPc);
             _server = server;
             await server.WaitUntilReadyAsync(endpoint, TimeSpan.FromSeconds(30), linked.Token);
             Plugin.Log.Information($"Ollama 서버를 켰습니다 (pid {server.ProcessId})");

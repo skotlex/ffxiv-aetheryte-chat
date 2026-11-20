@@ -48,20 +48,26 @@ public static class OllamaServer
     }
 
     /// <summary>
-    /// 켤 때 주는 동시 처리 수 (OLLAMA_NUM_PARALLEL). 기본값 1 이면 플러그인의 번역 작업자 둘이 보낸 요청을 하나씩 처리해
-    /// 둘째가 첫째를 기다린다. 2026-11-20 RTX 4090·gemma3:12b 에서 10줄 묶음 둘을 동시에 보내 둘 다 끝나기까지
-    /// 12.2초 → 7.6초. 혼자 오는 요청은 5% 안팎 느려지고, 모델 메모리는 문맥(KV 캐시)이 둘이 되어
-    /// gemma3:12b 8.1 → 8.6GB, aya-expanse:8b 5.4 → 5.7GB, gemma3:4b 2.9 → 3.1GB.
+    /// 켤 때 주는 동시 처리 수 (OLLAMA_NUM_PARALLEL). 기본값 1 이면 플러그인의 번역 작업자들이 보낸 요청을 하나씩 처리해
+    /// 뒤의 요청이 앞의 것을 기다린다. 동시에 돌려도 요청 하나의 속도는 거의 그대로라 공략 매크로의 묶음 여럿이 빨리 끝난다
+    /// (2026-11-20 RTX 4090·gemma3:12b, 30줄 = 10줄 묶음 셋: 동시 1 약 18초, 동시 2 약 12초, 동시 3 약 7.7초).
+    /// 대신 모델 메모리가 는다 (동시 1 / 2 / 3): gemma3:12b 8.1 / 8.6 / 9.7GB, aya-expanse:8b 5.4 / 5.7 / 6.1GB,
+    /// gemma3:4b 2.9 / 3.1 / 3.5GB. 게임도 그래픽카드 메모리를 쓰므로 16GB 이상 카드에서만 3, 그 밖에는 2.
+    /// 카드가 16GB 를 조금 못 미치게 알리는 경우가 있어 15.5GB 로 본다. CPU 로 돌 때(카드 없음)도 2.
     /// 사용자가 직접 켠 Ollama(공식 앱 등)는 그 설정을 그대로 쓴다
     /// </summary>
-    public const int NumParallel = 2;
+    public static int ParallelFor(long? gpuMemoryBytes) => gpuMemoryBytes >= (31L << 29) ? 3 : 2;
+
+    /// <summary>이 PC 의 그래픽카드(<see cref="GpuInfo.BestForOllama"/>)로 정한 동시 처리 수</summary>
+    public static int ParallelForThisPc => ParallelFor(GpuInfo.BestForOllama?.MemoryBytes);
 
     /// <summary>
     /// ollama.exe serve 를 창 없이 켠다. 이 프로세스(게임)가 어떻게 끝나든 — 비정상 종료라도 — 같이 꺼지도록 묶어 둔다.
     /// 다 뜰 때까지 기다리려면 <see cref="OllamaServerProcess.WaitUntilReadyAsync"/>
     /// </summary>
     /// <exception cref="TranslationException">실행하지 못함</exception>
-    public static OllamaServerProcess Start(string executable, string endpoint)
+    /// <param name="numParallel">동시 처리 수 (<see cref="ParallelForThisPc"/>)</param>
+    public static OllamaServerProcess Start(string executable, string endpoint, int numParallel)
     {
         var psi = new ProcessStartInfo(executable, "serve")
         {
@@ -74,7 +80,7 @@ public static class OllamaServer
         // 주소의 호스트·포트로 띄운다 (기본 127.0.0.1:11434)
         if (Uri.TryCreate(OllamaTranslator.NormalizeEndpoint(endpoint), UriKind.Absolute, out var uri))
             psi.Environment["OLLAMA_HOST"] = $"{uri.Host}:{uri.Port}";
-        psi.Environment["OLLAMA_NUM_PARALLEL"] = NumParallel.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        psi.Environment["OLLAMA_NUM_PARALLEL"] = numParallel.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
         Process process;
         try

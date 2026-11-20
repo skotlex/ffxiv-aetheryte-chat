@@ -24,6 +24,11 @@ public sealed class OllamaOptions : TranslatorOptions
     /// </summary>
     public Func<CancellationToken, Task>? EnsureServerAsync { get; set; }
 
+    /// <summary>
+    /// 받은 채팅을 동시에 보낼 수. 서버의 동시 처리 수(OLLAMA_NUM_PARALLEL)와 맞춘다 — 더 보내면 서버에서 기다리기만 한다
+    /// </summary>
+    public int MaxConcurrency { get; set; } = 2;
+
     /// <summary>처음 부를 때 모델을 VRAM 에 올리는 시간까지 포함한다</summary>
     public override TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(60);
 }
@@ -52,6 +57,7 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
     public string Name => $"Ollama ({options.Model})";
     public string ShortName => options.Model;
     public string NotReadyHint => "모델 없음 — '번역 도구' 탭에서 받아 주세요";
+    public int MaxConcurrency => options.MaxConcurrency;
 
     /// <summary>로그인 대신 Ollama 가 떠 있고 모델을 받아 두었는지 본다. 모델은 부르지 않는다.</summary>
     public async Task<bool> IsLoggedInAsync(CancellationToken ct = default)

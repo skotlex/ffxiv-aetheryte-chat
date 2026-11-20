@@ -50,6 +50,12 @@ public interface ITranslator
     /// <summary>번역 결과에 붙일 짧은 모델 이름 (같은 줄의 여러 번역을 구분한다)</summary>
     string ShortName { get; }
 
+    /// <summary>
+    /// 받은 채팅을 동시에 몇 개까지 번역할지. 기본 2 — CLI 프로세스가 한꺼번에 많이 뜨지 않게.
+    /// Ollama 는 서버의 동시 처리 수에 맞춘다
+    /// </summary>
+    int MaxConcurrency => 2;
+
     /// <summary>모델을 부르지 않고 로그인 상태만 확인한다.</summary>
     Task<bool> IsLoggedInAsync(CancellationToken ct = default);
 
