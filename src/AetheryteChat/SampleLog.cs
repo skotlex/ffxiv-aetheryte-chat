@@ -59,7 +59,7 @@ internal sealed class SampleLog : IDisposable
         _timer = new Timer(_ => _ = FlushAsync(), null, FlushInterval, FlushInterval);
     }
 
-    /// <summary>기록을 남기는지 (개발용 값을 설정했는지). '오역 제보' 메뉴도 이때만 보인다</summary>
+    /// <summary>기록을 남기는지 (개발용 값을 설정했는지)</summary>
     public bool Enabled => _directory is not null;
 
     /// <summary>플레이어 이름 ('이름 성') 을 기억해 둔다. 메모리에만 두고 파일에는 남기지 않는다</summary>
@@ -78,8 +78,16 @@ internal sealed class SampleLog : IDisposable
         }
     }
 
-    /// <summary>받은 채팅을 번역한 결과 하나. 같은 줄을 다른 도구로 다시 번역하면 한 건 더 남는다</summary>
-    public void Incoming(XivChatType channel, string source, string engine, bool done, string? output)
+    /// <summary>받은 채팅 기록의 state 값</summary>
+    public const string Done = "done", Failed = "failed", Skipped = "skipped";
+
+    /// <summary>
+    /// 받은 채팅 한 줄과 그 번역. 같은 줄을 다른 도구로 다시 번역하면 한 건 더 남는다.
+    /// 캐시로 바로 보여 준 줄(<paramref name="cached"/>)과 채팅이 많아 건너뛴 줄도 남긴다 — 같은 매크로가 몇 번 나왔는지,
+    /// 번역하지 못한 줄에 어떤 말이 있었는지까지 용어집을 고를 때 보게
+    /// </summary>
+    /// <param name="state"><see cref="Done"/>·<see cref="Failed"/>·<see cref="Skipped"/></param>
+    public void Incoming(XivChatType channel, string source, string engine, string state, string? output = null, bool cached = false)
     {
         if (!Enabled)
             return;
@@ -89,8 +97,9 @@ internal sealed class SampleLog : IDisposable
             ["ch"] = ChannelName(channel),
             ["src"] = Mask(source),
             ["engine"] = engine,
-            ["state"] = done ? "done" : "failed",
-            ["out"] = done && output is not null ? Mask(output) : null,
+            ["state"] = state,
+            ["cached"] = cached ? true : null,
+            ["out"] = state == Done && output is not null ? Mask(output) : null,
         });
     }
 
@@ -108,22 +117,6 @@ internal sealed class SampleLog : IDisposable
             ["back"] = back is null ? null : Mask(back),
             ["engine"] = engine,
             ["sent"] = sent,
-        });
-    }
-
-    /// <summary>받은 채팅 창의 '오역 제보'</summary>
-    public void Flag(XivChatType channel, string source, string engine, string output)
-    {
-        if (!Enabled)
-            return;
-        Add(new JsonObject
-        {
-            ["kind"] = "flag",
-            ["ch"] = ChannelName(channel),
-            ["src"] = Mask(source),
-            ["engine"] = engine,
-            ["out"] = Mask(output),
-            ["reason"] = "user",
         });
     }
 

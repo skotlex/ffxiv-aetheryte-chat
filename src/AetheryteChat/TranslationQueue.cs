@@ -269,6 +269,7 @@ internal sealed partial class TranslationQueue : IDisposable
         if (CacheFor(translator)?.TryGet(line.Message, out var cached) == true)
         {
             line.AddTranslation(translator.ShortName).Complete(TranslationState.Done, cached);
+            _sampleLog.Incoming(line.Channel, line.Message, translator.ShortName, SampleLog.Done, cached, cached: true);
             return;
         }
 
@@ -325,10 +326,13 @@ internal sealed partial class TranslationQueue : IDisposable
     /// <summary>이 도구의 캐시. 그사이 도구를 바꿨으면 null — 이전 도구의 번역이 새 도구의 캐시에 섞이지 않게</summary>
     private TranslationCache? CacheFor(ITranslator translator) => _cache is var c && c.Owner == translator ? c : null;
 
-    private static void Skip(Job job)
+    private void Skip(Job job)
     {
-        foreach (var (_, target) in job.Items)
+        foreach (var (line, target) in job.Items)
+        {
             target.Complete(TranslationState.Skipped, "채팅이 많아 건너뜀");
+            _sampleLog.Incoming(line.Channel, line.Message, job.Translator.ShortName, SampleLog.Skipped);
+        }
     }
 
     /// <summary>
@@ -548,6 +552,7 @@ internal sealed partial class TranslationQueue : IDisposable
             if (cache?.TryGet(item.Line.Message, out var cached) == true)
             {
                 item.Target.Complete(TranslationState.Done, cached);
+                _sampleLog.Incoming(item.Line.Channel, item.Line.Message, translator.ShortName, SampleLog.Done, cached, cached: true);
                 continue;
             }
             var at = groups.FindIndex(g => g.Text == item.Line.Message);
@@ -628,7 +633,7 @@ internal sealed partial class TranslationQueue : IDisposable
         foreach (var (line, target) in items)
         {
             target.Complete(TranslationState.Done, translated, engine);
-            _sampleLog.Incoming(line.Channel, line.Message, engine ?? translator.ShortName, done: true, translated);
+            _sampleLog.Incoming(line.Channel, line.Message, engine ?? translator.ShortName, SampleLog.Done, translated);
         }
         // 1순위 도구가 번역한 것만 기억한다 — 예비 도구의 번역이 1순위가 돌아온 뒤에도 계속 쓰이지 않게
         if ((engine ?? translator.ShortName) == translator.ShortName)
@@ -653,7 +658,7 @@ internal sealed partial class TranslationQueue : IDisposable
                 foreach (var (line, target) in items)
                 {
                     target.Complete(TranslationState.Failed, e.Message);
-                    _sampleLog.Incoming(line.Channel, line.Message, translator.ShortName, done: false, null);
+                    _sampleLog.Incoming(line.Channel, line.Message, translator.ShortName, SampleLog.Failed);
                 }
                 // 채팅 내용이 로그 파일에 남지 않게 원인 메시지는 창에만 보여 준다
                 Plugin.Log.Warning(logMessage);
