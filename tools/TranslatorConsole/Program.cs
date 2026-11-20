@@ -8,6 +8,9 @@
 // 옵션: --engine <claude|codex|ollama|papago> (기본 claude), --model <name> (claude 기본 haiku, ollama 기본 gemma3:12b),
 //       --effort <low|medium|high> (claude: --effort, codex: reasoning effort), --exe <실행 파일 경로>,
 //       --endpoint <url> (ollama 주소, 기본 http://127.0.0.1:11434)
+//       --ollama-exe <ollama.exe 경로> (기본: 플러그인이 설치한 것 → 공식 설치 → PATH)
+//       이 PC 의 Ollama 가 꺼져 있으면 창 없이 켜고, 콘솔이 끝나면 같이 끈다 (게임 속 플러그인과 같은 방식).
+//       여러 번 시험할 때는 다른 창에서 'TranslatorConsole -- ollama serve' 로 켜 두면 매번 켜고 모델을 올리는 시간을 아낀다
 //       --codex-standard (Codex 경량 모드를 끄고 기존 방식으로 비교)
 //       --engine claude,codex,ollama 처럼 쉼표로 여러 개 — 그 순서대로 쓰고, 앞의 도구가 실패하면 다음 도구로 번역한다
 //       --glossary <파일> (기본 용어집 대신 이 파일을 쓴다 — 용어집을 바꾸기 전/후 비교), --no-glossary (용어집 없이)
@@ -26,7 +29,7 @@ Console.InputEncoding = Encoding.UTF8;
 Console.OutputEncoding = Encoding.UTF8;
 
 string engine = "claude";
-string? model = null, effort = null, exe = null, endpoint = null;
+string? model = null, effort = null, exe = null, endpoint = null, ollamaExe = null;
 bool codexLightweight = true;
 string? glossaryPath = null;
 bool noGlossary = false;
@@ -41,6 +44,7 @@ for (var i = 0; i < args.Length; i++)
         case "--effort": effort = args[++i]; break;
         case "--exe": exe = args[++i]; break;
         case "--endpoint": endpoint = args[++i]; break;
+        case "--ollama-exe": ollamaExe = args[++i]; break;
         case "--codex-standard": codexLightweight = false; break;
         case "--glossary": glossaryPath = args[++i]; break;
         case "--no-glossary": noGlossary = true; break;
@@ -52,7 +56,7 @@ for (var i = 0; i < args.Length; i++)
 if (positional.Count == 0)
 {
     Console.Error.WriteLine("사용법: TranslatorConsole (auth | ja2ko | ko2ja) [--engine claude|codex|ollama|papago] [--model m] [--effort e] [--exe path] [--endpoint url] [문장]");
-    Console.Error.WriteLine("        TranslatorConsole ollama (size | pull | ps | unload) [--model m] [--endpoint url]");
+    Console.Error.WriteLine("        TranslatorConsole ollama (serve | size | pull | ps | unload) [--model m] [--endpoint url] [--ollama-exe path]");
     Console.Error.WriteLine("        TranslatorConsole match (ja2ko | ko2ja) [--glossary 파일] [문장]   (맞은 용어만)");
     Console.Error.WriteLine("        --codex-standard: Codex 경량 모드 끄기 (비교용)");
     Console.Error.WriteLine("        --glossary <파일>: 기본 용어집 대신 이 파일, --no-glossary: 용어집 없이");
@@ -63,6 +67,25 @@ if (positional.Count == 0)
 var glossary = noGlossary ? Glossary.Empty
     : glossaryPath is not null ? Glossary.Parse(File.ReadAllText(glossaryPath))
     : Glossary.Default;
+
+// 이 PC 의 Ollama 가 꺼져 있으면 창 없이 켠다. 켠 서버는 이 콘솔이 끝날 때 같이 꺼진다 (OllamaServer 가 작업 개체로 묶는다)
+OllamaServerProcess? ollamaServer = null;
+async Task EnsureOllamaAsync(string ollamaEndpoint, CancellationToken ct)
+{
+    if (!OllamaModels.IsLocal(ollamaEndpoint) || ollamaServer is { HasExited: false }
+        || await OllamaServer.GetVersionAsync(ollamaEndpoint, ct) is not null)
+        return;
+    var path = OllamaServer.FindExecutable(ollamaExe ?? PluginOllamaExecutable())
+        ?? throw new TranslationException(
+            "ollama.exe를 찾지 못했습니다 — 게임 속 번역 도구 탭에서 Ollama를 설치하거나 --ollama-exe 로 경로를 지정해 주세요.");
+    Console.Error.WriteLine($"Ollama 서버를 켭니다: {path} (콘솔이 끝나면 꺼집니다)");
+    ollamaServer = OllamaServer.Start(path, ollamaEndpoint);
+    await ollamaServer.WaitUntilReadyAsync(ollamaEndpoint, TimeSpan.FromSeconds(30), ct);
+}
+
+// 게임 속 플러그인이 설치한 ollama.exe (Dalamud 의 플러그인 설정 폴더 아래)
+static string PluginOllamaExecutable() => OllamaInstaller.ExecutablePath(Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XIVLauncher", "pluginConfigs", "AetheryteChat", "ollama"));
 
 // 번역하지 않고 이 문장에 맞은 용어만 보여 준다 (용어 고르기 시험)
 if (positional[0] == "match")
@@ -91,8 +114,22 @@ if (positional[0] == "ollama")
     var ollamaModel = model ?? new OllamaOptions().Model;
     try
     {
-        switch (positional.ElementAtOrDefault(1))
+        var command = positional.ElementAtOrDefault(1);
+        if (command is "serve" or "pull" or "ps" or "unload")
+            await EnsureOllamaAsync(ollamaEndpoint, CancellationToken.None);
+        switch (command)
         {
+            case "serve":
+                // 여러 번 시험할 때 다른 창에서 켜 두면, 번역할 때마다 서버를 켜고 모델을 올리는 시간을 아낀다
+                Console.WriteLine(ollamaServer is null
+                    ? $"Ollama가 이미 켜져 있습니다 ({ollamaEndpoint})."
+                    : $"Ollama를 켰습니다 ({ollamaEndpoint}). Enter를 누르면 끕니다.");
+                if (ollamaServer is not null)
+                {
+                    Console.ReadLine();
+                    ollamaServer.Dispose();
+                }
+                return 0;
             case "size":
                 var size = await OllamaModels.GetDownloadSizeAsync(ollamaModel);
                 Console.WriteLine($"{ollamaModel}: {(size is { } s ? OllamaModels.FormatSize(s) : "(모름)")}");
@@ -167,6 +204,7 @@ foreach (var name in engineNames)
                 ollama.Model = model;
             if (endpoint is not null)
                 ollama.Endpoint = endpoint;
+            ollama.EnsureServerAsync = ct => EnsureOllamaAsync(ollama.Endpoint, ct); // auth 로 확인할 때
             created.Add((name, new OllamaTranslator(ollama), ollama.Endpoint));
             break;
         case "papago":
@@ -179,6 +217,22 @@ foreach (var name in engineNames)
 }
 ITranslator translator = single ? created[0].Translator : new FallbackTranslator(created.Select(c => (c.Name, c.Translator)));
 var exePath = string.Join(", ", created.Select(c => c.ExePath ?? "(못 찾음)"));
+
+// 번역은 상태 확인(IsLoggedInAsync)을 거치지 않고 바로 부르므로 Ollama 를 미리 켜 둔다.
+// 예비 도구가 있으면 켜지 못해도 이어 간다 — 다음 도구로 넘어가는지 볼 수 있게
+if (positional[0] != "auth" && engineNames.Contains("ollama"))
+{
+    try
+    {
+        await EnsureOllamaAsync(endpoint ?? new OllamaOptions().Endpoint, CancellationToken.None);
+    }
+    catch (TranslationException e)
+    {
+        Console.Error.WriteLine(e.Message);
+        if (single)
+            return 1;
+    }
+}
 
 if (positional[0] == "samples")
     return await Samples.RunAsync(positional.Skip(1).ToList(), glossary, () => translator);

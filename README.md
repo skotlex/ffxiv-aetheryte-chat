@@ -219,9 +219,15 @@ dotnet run --project tools/TranslatorConsole -- auth --engine codex
 dotnet run --project tools/TranslatorConsole -- ja2ko "零式4層、初見です。よろしくお願いします！"
 dotnet run --project tools/TranslatorConsole -- ko2ja --engine ollama --model gemma3:12b
 dotnet run --project tools/TranslatorConsole -- ja2ko --batch                       # 빈 줄까지 받은 줄을 한 번에 (공략 매크로처럼)
+dotnet run --project tools/TranslatorConsole -- ollama serve                        # Ollama 를 켜 두기 (Enter 로 끔)
 dotnet run --project tools/TranslatorConsole -- match ja2ko "零式4層、初見です"        # 번역하지 않고 맞은 용어만
 dotnet run --project tools/TranslatorConsole -- ja2ko --glossary my-glossary.txt   # 기본 용어집 대신 이 파일 (--no-glossary: 없이)
 ```
+
+`--engine ollama` 로 번역할 때 이 PC 의 Ollama 가 꺼져 있으면 콘솔이 창 없이 켜고, 끝날 때 같이 끕니다.
+`ollama.exe` 는 게임 속 플러그인이 설치한 것(`%APPDATA%\XIVLauncher\pluginConfigs\AetheryteChat\ollama`) → 공식 설치 → PATH
+순서로 찾고, `--ollama-exe` 로 직접 지정할 수도 있습니다. 매번 켜면 모델을 올리느라 첫 번역이 몇 초 늦으니,
+여러 번 시험할 때는 다른 창에서 `ollama serve` 로 켜 두세요.
 
 기본 용어집은 `src/AetheryteChat.Translation/default-glossary.txt` 입니다 (플러그인에 리소스로 들어갑니다).
 
