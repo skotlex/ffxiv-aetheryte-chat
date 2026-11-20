@@ -363,7 +363,7 @@ internal sealed class EngineTab(Plugin plugin) : IDisposable
         }
         HelpText($"{OllamaModels.LargeModel}(받을 때 약 8.2GB)는 한↔일 게임 용어까지 맞게 옮깁니다. 그래픽카드 메모리가 12GB 이상일 때 권합니다 " +
                  "(게임도 그래픽카드 메모리를 쓰므로). " +
-                 $"{OllamaModels.MidModel}(약 5.1GB)는 그 사이로, 게임 용어는 12b와 비슷하게 맞고 메모리는 약 5.4GB를 씁니다. " +
+                 $"{OllamaModels.MidModel}(약 5.1GB)는 그 사이로, 게임 용어는 12b와 비슷하게 맞고 메모리는 약 5.7GB를 씁니다. " +
                  "8GB 이상일 때 권합니다. 비상업 라이선스(CC-BY-NC 4.0)라 개인 용도로만 쓸 수 있습니다. " +
                  $"{OllamaModels.SmallModel}(약 3.4GB)는 GPU 없이 CPU만으로도 한 줄에 약 3초, 처음 올릴 때 약 17초였습니다 " +
                  "(내장 그래픽 노트북 실측). gemma3:1b 처럼 더 작은 모델은 번역을 제대로 하지 못했습니다.");

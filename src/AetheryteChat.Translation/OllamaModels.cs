@@ -39,11 +39,11 @@ public static class OllamaModels
     // 모델 받기는 수 분 걸릴 수 있어 HttpClient 기본 제한 시간(100초)을 쓰지 않는다. 멈추는 것은 취소로 한다
     private static readonly HttpClient PullHttp = new() { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
 
-    /// <summary>한↔일 게임 용어까지 맞게 옮긴 모델 (받을 때 약 8.2GB, 올리면 약 8.1GB)</summary>
+    /// <summary>한↔일 게임 용어까지 맞게 옮긴 모델 (받을 때 약 8.2GB, 올리면 약 8.6GB — 동시 처리 2(OllamaServer.NumParallel) 기준)</summary>
     public const string LargeModel = "gemma3:12b";
 
     /// <summary>
-    /// 4b 와 12b 사이 (받을 때 약 5.1GB, 올리면 약 5.4GB). 2026-11-19 시험 문장 22개에서 용어는 12b 와 같거나 더 맞았고
+    /// 4b 와 12b 사이 (받을 때 약 5.1GB, 올리면 약 5.7GB). 2026-11-19 시험 문장 22개에서 용어는 12b 와 같거나 더 맞았고
     /// (零式4層 등), 다른 언어가 섞이지 않았다. qwen3:8b·qwen2.5:7b 는 일본어·중국어가 섞였고 exaone3.5:7.8b 는 일본어가 약했다.
     /// 라이선스가 CC-BY-NC 4.0(비상업)이다
     /// </summary>
@@ -52,11 +52,11 @@ public static class OllamaModels
     /// <summary>GPU 없이 CPU 만으로도 쓸 만한 모델 (약 3.4GB). 더 작은 1b 는 번역을 제대로 하지 못했다</summary>
     public const string SmallModel = "gemma3:4b";
 
-    // 12b 는 GPU 메모리를 약 8GB 쓰고 게임도 몇 GB 를 쓰므로, 12GB 카드부터 12b 를 권한다.
+    // 12b 는 GPU 메모리를 약 8.6GB 쓰고 게임도 몇 GB 를 쓰므로, 12GB 카드부터 12b 를 권한다.
     // 카드가 12GB 를 조금 못 미치게 알리는 경우가 있어 11.5GB 로 본다
     private const long LargeModelGpuBytes = 23L << 29; // 11.5GB
 
-    // 중간 모델은 약 5.4GB 라 8GB 카드(노트북 포함)부터 권한다. 게임과 같이 쓰면 빠듯해 일부가 CPU 로 돌 수 있다 —
+    // 중간 모델은 약 5.7GB 라 8GB 카드(노트북 포함)부터 권한다. 게임과 같이 쓰면 빠듯해 일부가 CPU 로 돌 수 있다 —
     // 그때는 번역 도구 탭이 알리고 4b 를 권한다. 8GB 를 조금 못 미치게 알리는 카드를 생각해 7.5GB 로 본다
     private const long MidModelGpuBytes = 15L << 29; // 7.5GB
 
