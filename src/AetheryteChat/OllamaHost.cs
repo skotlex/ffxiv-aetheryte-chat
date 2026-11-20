@@ -30,34 +30,91 @@ internal sealed class OllamaHost(string pluginConfigDirectory) : IDisposable
     /// <summary>쓸 수 있는 ollama.exe 가 있는지 (플러그인 설치·공식 설치·PATH)</summary>
     public bool IsAnyInstalled => OllamaServer.FindExecutable(ManagedExecutable) is not null;
 
+    // 동시 3 으로 올렸더니 GPU 에 다 못 올라간 모델 — 이번 세션에는 2 로 켠다 (게임·다른 프로그램이 그래픽카드 메모리를 쓰는 중)
+    private readonly HashSet<string> _spilledAtThree = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>이 모델로 켤 동시 처리 수. 카드 메모리·모델 크기로 정하고, 동시 3 에서 넘친 적이 있으면 2</summary>
+    public int ParallelFor(string model)
+    {
+        lock (_spilledAtThree)
+        {
+            if (_spilledAtThree.Any(m => OllamaTranslator.SameModel(m, model)))
+                return 2;
+        }
+        return OllamaServer.ParallelForThisPc(model);
+    }
+
     /// <summary>
-    /// 번역기가 상태를 확인하기 전에 부른다. 이 PC 의 주소인데 Ollama 가 꺼져 있으면 창 없이 켜고 뜰 때까지 기다린다
+    /// 번역기가 상태를 확인하기 전에 부른다. 이 PC 의 주소인데 Ollama 가 꺼져 있으면 창 없이 켜고 뜰 때까지 기다린다.
+    /// 플러그인이 켠 서버가 이 모델에 맞는 동시 처리 수와 다르면(모델을 바꿨거나 넘쳐서 줄였을 때) 다시 켠다
     /// </summary>
     /// <exception cref="TranslationException">설치되어 있지 않거나 켜지 못함</exception>
-    public async Task EnsureServerAsync(string endpoint, CancellationToken ct)
+    public async Task EnsureServerAsync(string endpoint, string model, CancellationToken ct)
     {
-        if (!OllamaModels.IsLocal(endpoint) || await OllamaServer.GetVersionAsync(endpoint, ct) is not null)
-            return; // 다른 PC 의 Ollama 이거나, 이미 누군가 켜 두었다
+        if (!OllamaModels.IsLocal(endpoint))
+            return; // 다른 PC 의 Ollama
+        var wanted = ParallelFor(model);
+        if (!NeedsRestart(wanted) && await OllamaServer.GetVersionAsync(endpoint, ct) is not null)
+            return; // 이미 켜져 있다 (플러그인이 맞게 켰거나, 누군가 직접 켰다)
 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
         await _serverLock.WaitAsync(linked.Token);
         try
         {
-            if (await OllamaServer.GetVersionAsync(endpoint, linked.Token) is not null)
+            var restart = NeedsRestart(wanted);
+            if (!restart && await OllamaServer.GetVersionAsync(endpoint, linked.Token) is not null)
                 return; // 기다리는 사이 켜졌다
 
-            StopServerLocked(); // 꺼진 채 남은 것을 치운다
+            StopServerLocked(); // 꺼진 채 남은 것, 또는 동시 처리 수가 다른 서버를 치운다
+            if (restart)
+                await WaitUntilStoppedAsync(endpoint, linked.Token);
             var executable = OllamaServer.FindExecutable(ManagedExecutable)
                 ?? throw new TranslationException("Ollama가 설치되어 있지 않습니다 — '번역 도구' 탭에서 설치해 주세요.");
-            var server = OllamaServer.Start(executable, endpoint, OllamaServer.ParallelForThisPc);
+            var server = OllamaServer.Start(executable, endpoint, wanted);
             _server = server;
             await server.WaitUntilReadyAsync(endpoint, TimeSpan.FromSeconds(30), linked.Token);
-            Plugin.Log.Information($"Ollama 서버를 켰습니다 (pid {server.ProcessId})");
+            Plugin.Log.Information($"Ollama 서버를 켰습니다 (pid {server.ProcessId}, 동시 처리 {wanted})");
         }
         finally
         {
             _serverLock.Release();
         }
+    }
+
+    /// <summary>플러그인이 켠 서버가 돌고 있는데 동시 처리 수가 다르다</summary>
+    private bool NeedsRestart(int wanted) => _server is { HasExited: false } s && s.NumParallel != wanted;
+
+    /// <summary>끈 서버가 응답을 멈출 때까지 (최대 5초) — 바로 다시 켜면 아직 주소를 쥐고 있을 수 있다</summary>
+    private static async Task WaitUntilStoppedAsync(string endpoint, CancellationToken ct)
+    {
+        for (var i = 0; i < 25 && await OllamaServer.GetVersionAsync(endpoint, ct) is not null; i++)
+            await Task.Delay(200, ct);
+    }
+
+    /// <summary>
+    /// 모델을 올린 뒤 부른다. 플러그인이 동시 3 으로 켰는데 모델이 GPU 에 다 못 올라갔으면(일부가 CPU 로 돈다) 이 모델을
+    /// 동시 2 로 기억하고 true — 부르는 쪽이 번역 도구를 다시 만들면 <see cref="EnsureServerAsync"/> 가 2 로 다시 켠다.
+    /// 2 에서도 넘치면 더 줄이지 않는다 (번역 도구 탭이 빨간 글씨로 알리고 작은 모델을 권한다)
+    /// </summary>
+    public async Task<bool> CheckFitAsync(string endpoint, string model)
+    {
+        if (_server is not { HasExited: false, NumParallel: > 2 })
+            return false;
+        OllamaLoadedModel? loaded;
+        try
+        {
+            loaded = await OllamaModels.GetLoadedAsync(endpoint, model, _cts.Token);
+        }
+        catch (Exception e) when (e is TranslationException or OperationCanceledException)
+        {
+            return false;
+        }
+        if (loaded is not { PartlyOnCpu: true })
+            return false;
+        lock (_spilledAtThree)
+            _spilledAtThree.Add(model);
+        Plugin.Log.Warning($"Ollama {model} 가 동시 처리 3 으로는 GPU 에 다 올라가지 않아 ({loaded.GpuFraction:P0}) 2 로 다시 켭니다");
+        return true;
     }
 
     /// <summary>

@@ -209,9 +209,15 @@ public sealed class Plugin : IDalamudPlugin
     {
         var options = Configuration.Ollama.ToOptions(glossary);
         options.Preload &= primary;
-        options.MaxConcurrency = OllamaServer.ParallelForThisPc; // 플러그인이 켜는 서버의 동시 처리 수와 같게
+        options.MaxConcurrency = OllamaHost.ParallelFor(options.Model); // 플러그인이 켜는 서버의 동시 처리 수와 같게
         // 꺼져 있으면 창 없이 켠다 (Ollama 앱의 환영 화면·작업 표시줄 아이콘 없이)
-        options.EnsureServerAsync = ct => OllamaHost.EnsureServerAsync(options.Endpoint, ct);
+        options.EnsureServerAsync = ct => OllamaHost.EnsureServerAsync(options.Endpoint, options.Model, ct);
+        // 올린 뒤 GPU 에 다 못 올라갔으면 동시 처리를 줄여 다시 켠다 — 번역 도구를 다시 만들면 서버도 맞춰 다시 켜진다
+        options.ModelLoaded = () => _ = Task.Run(async () =>
+        {
+            if (await OllamaHost.CheckFitAsync(options.Endpoint, options.Model))
+                await Framework.RunOnFrameworkThread(TranslationQueue.Reload);
+        });
         return new OllamaTranslator(options);
     }
 

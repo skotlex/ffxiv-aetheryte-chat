@@ -70,7 +70,7 @@ var glossary = noGlossary ? Glossary.Empty
 
 // 이 PC 의 Ollama 가 꺼져 있으면 창 없이 켠다. 켠 서버는 이 콘솔이 끝날 때 같이 꺼진다 (OllamaServer 가 작업 개체로 묶는다)
 OllamaServerProcess? ollamaServer = null;
-async Task EnsureOllamaAsync(string ollamaEndpoint, CancellationToken ct)
+async Task EnsureOllamaAsync(string ollamaEndpoint, string ollamaModel, CancellationToken ct)
 {
     if (!OllamaModels.IsLocal(ollamaEndpoint) || ollamaServer is { HasExited: false }
         || await OllamaServer.GetVersionAsync(ollamaEndpoint, ct) is not null)
@@ -79,7 +79,9 @@ async Task EnsureOllamaAsync(string ollamaEndpoint, CancellationToken ct)
         ?? throw new TranslationException(
             "ollama.exe를 찾지 못했습니다 — 게임 속 번역 도구 탭에서 Ollama를 설치하거나 --ollama-exe 로 경로를 지정해 주세요.");
     Console.Error.WriteLine($"Ollama 서버를 켭니다: {path} (콘솔이 끝나면 꺼집니다)");
-    ollamaServer = OllamaServer.Start(path, ollamaEndpoint, OllamaServer.ParallelForThisPc);
+    var parallel = OllamaServer.ParallelForThisPc(ollamaModel);
+    Console.Error.WriteLine($"동시 처리 {parallel} ({ollamaModel} 기준)");
+    ollamaServer = OllamaServer.Start(path, ollamaEndpoint, parallel);
     await ollamaServer.WaitUntilReadyAsync(ollamaEndpoint, TimeSpan.FromSeconds(30), ct);
 }
 
@@ -116,7 +118,7 @@ if (positional[0] == "ollama")
     {
         var command = positional.ElementAtOrDefault(1);
         if (command is "serve" or "pull" or "ps" or "unload")
-            await EnsureOllamaAsync(ollamaEndpoint, CancellationToken.None);
+            await EnsureOllamaAsync(ollamaEndpoint, ollamaModel, CancellationToken.None);
         switch (command)
         {
             case "serve":
@@ -204,7 +206,7 @@ foreach (var name in engineNames)
                 ollama.Model = model;
             if (endpoint is not null)
                 ollama.Endpoint = endpoint;
-            ollama.EnsureServerAsync = ct => EnsureOllamaAsync(ollama.Endpoint, ct); // auth 로 확인할 때
+            ollama.EnsureServerAsync = ct => EnsureOllamaAsync(ollama.Endpoint, ollama.Model, ct); // auth 로 확인할 때
             created.Add((name, new OllamaTranslator(ollama), ollama.Endpoint));
             break;
         case "papago":
@@ -224,7 +226,7 @@ if (positional[0] != "auth" && engineNames.Contains("ollama"))
 {
     try
     {
-        await EnsureOllamaAsync(endpoint ?? new OllamaOptions().Endpoint, CancellationToken.None);
+        await EnsureOllamaAsync(endpoint ?? new OllamaOptions().Endpoint, model ?? new OllamaOptions().Model, CancellationToken.None);
     }
     catch (TranslationException e)
     {

@@ -29,6 +29,12 @@ public sealed class OllamaOptions : TranslatorOptions
     /// </summary>
     public int MaxConcurrency { get; set; } = 2;
 
+    /// <summary>
+    /// 모델을 메모리에 올린 뒤 한 번 부른다 (미리 올리기가 끝났을 때, 미리 올리지 않으면 첫 번역이 끝났을 때).
+    /// 플러그인이 GPU 에 다 올라갔는지 확인하는 데 쓴다. 번역 스레드에서 불리므로 오래 걸리는 일은 뒤로 넘긴다
+    /// </summary>
+    public Action? ModelLoaded { get; set; }
+
     /// <summary>처음 부를 때 모델을 VRAM 에 올리는 시간까지 포함한다</summary>
     public override TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(60);
 }
@@ -58,6 +64,14 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
     public string ShortName => options.Model;
     public string NotReadyHint => "모델 없음 — '번역 도구' 탭에서 받아 주세요";
     public int MaxConcurrency => options.MaxConcurrency;
+
+    private int _loadedNotified; // ModelLoaded 를 한 번만 부른다
+
+    private void NotifyLoaded()
+    {
+        if (Interlocked.Exchange(ref _loadedNotified, 1) == 0)
+            options.ModelLoaded?.Invoke();
+    }
 
     /// <summary>로그인 대신 Ollama 가 떠 있고 모델을 받아 두었는지 본다. 모델은 부르지 않는다.</summary>
     public async Task<bool> IsLoggedInAsync(CancellationToken ct = default)
@@ -142,6 +156,8 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
                 ["options"] = new JsonObject { ["num_ctx"] = ContextLength },
             };
             using var response = await Http.PostAsJsonAsync($"{BaseUrl}/api/generate", body);
+            if (response.IsSuccessStatusCode)
+                NotifyLoaded();
         }
         catch (HttpRequestException)
         {
@@ -247,6 +263,7 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
         var input = JsonRead.Int64(root, "prompt_eval_count");
         var output = JsonRead.Int64(root, "eval_count");
 
+        NotifyLoaded();
         return (content, elapsed, input, output);
     }
 
