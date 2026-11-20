@@ -141,6 +141,45 @@ public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator
                 return new TranslationResult(cached, TimeSpan.Zero, 0, 0);
         }
 
+        var (answer, elapsed, input, output) = await AskAsync(Prompts.For(direction), userTurn, lightweight, ct);
+        var result = new TranslationResult(AnswerJson.ExtractTranslation(answer), elapsed, input, output);
+        // 성공한 번역만 메모리에 보관한다. 방향·맞은 용어·모델·추론 설정이 다르면 새로 번역한다.
+        if (!string.IsNullOrWhiteSpace(result.Text))
+        {
+            lock (_cacheLock)
+            {
+                if (_cache.TryAdd(cacheKey, result.Text))
+                {
+                    _cacheOrder.Enqueue(cacheKey);
+                    if (_cache.Count > CacheCapacity)
+                        _cache.Remove(_cacheOrder.Dequeue());
+                }
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// 여러 줄을 한 번의 호출로 번역한다 (앞뒤 줄을 문맥으로 쓴다). 묶음은 그때그때 달라 위의 캐시에 넣지 않는다 —
+    /// 플러그인이 줄마다 기억한다
+    /// </summary>
+    public async Task<BatchTranslationResult> TranslateBatchAsync(
+        IReadOnlyList<string> texts,
+        TranslationDirection direction,
+        CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var lightweight = await UseLightweightAsync();
+        var terms = options.Glossary.Match(Prompts.JoinForGlossary(texts), direction);
+        var (answer, elapsed, input, output) =
+            await AskAsync(Prompts.ForBatch(direction), Prompts.BatchUserTurn(texts, terms, direction), lightweight, ct);
+        return new BatchTranslationResult(AnswerJson.ExtractTranslations(answer, texts.Count), elapsed, input, output);
+    }
+
+    /// <summary>지시문과 사용자 메시지로 codex exec 를 한 번 실행하고 모델의 답(agent_message)을 돌려준다</summary>
+    private async Task<(string Answer, TimeSpan Elapsed, long? Input, long? Output)> AskAsync(
+        string instructions, string userTurn, bool lightweight, CancellationToken ct)
+    {
         var args = new List<string>
         {
             "exec",
@@ -157,7 +196,6 @@ public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator
         string? instructionsFile = null;
         try
         {
-            var instructions = Prompts.For(direction);
             var prompt = instructions + "\n\n" + userTurn;
             if (lightweight)
             {
@@ -186,21 +224,8 @@ public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator
                 prompt = userTurn;
             }
             var run = await CliRunner.RunAsync(Executable, args, prompt, WorkDir, options.Timeout, ct);
-            var result = ParseEvents(run.StdOut, run.StdErr, run.ExitCode, run.Elapsed);
-            // 성공한 번역만 메모리에 보관한다. 방향·맞은 용어·모델·추론 설정이 다르면 새로 번역한다.
-            if (!string.IsNullOrWhiteSpace(result.Text))
-            {
-                lock (_cacheLock)
-                {
-                    if (_cache.TryAdd(cacheKey, result.Text))
-                    {
-                        _cacheOrder.Enqueue(cacheKey);
-                        if (_cache.Count > CacheCapacity)
-                            _cache.Remove(_cacheOrder.Dequeue());
-                    }
-                }
-            }
-            return result;
+            var (answer, input, output) = ParseEvents(run.StdOut, run.StdErr, run.ExitCode);
+            return (answer, run.Elapsed, input, output);
         }
         finally
         {
@@ -216,7 +241,7 @@ public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator
     /// <summary>
     /// --json 출력은 한 줄에 이벤트 하나. 답은 item.completed(agent_message) 의 text, 사용량은 turn.completed 의 usage.
     /// </summary>
-    internal static TranslationResult ParseEvents(string stdout, string stderr, int exitCode, TimeSpan elapsed)
+    internal static (string Answer, long? Input, long? Output) ParseEvents(string stdout, string stderr, int exitCode)
     {
         string? answer = null;
         string? error = null;
@@ -273,6 +298,6 @@ public sealed class CodexCliTranslator(CodexCliOptions options) : ITranslator
             };
         }
 
-        return new TranslationResult(AnswerJson.ExtractTranslation(answer), elapsed, input, output);
+        return (answer, input, output);
     }
 }

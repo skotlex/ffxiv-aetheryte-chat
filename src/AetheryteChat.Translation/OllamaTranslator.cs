@@ -148,22 +148,58 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
         TranslationDirection direction,
         CancellationToken ct = default)
     {
+        var userTurn = Prompts.UserTurn(text, options.Glossary.Match(text, direction), direction);
+        var (content, elapsed, input, output) =
+            await ChatAsync(Prompts.For(direction), userTurn, AnswerSchema.DeepClone(), ct);
+        return new TranslationResult(AnswerJson.ExtractTranslation(content), elapsed, input, output);
+    }
+
+    /// <summary>
+    /// 여러 줄을 한 번의 요청으로 번역한다 (앞뒤 줄을 문맥으로 쓴다). 구조화 출력으로 배열 길이를 줄 수에 맞춘다.
+    /// 문맥 길이(<see cref="ContextLength"/>)에 들어가게 묶는 줄의 양은 부르는 쪽이 묶는다
+    /// </summary>
+    public async Task<BatchTranslationResult> TranslateBatchAsync(
+        IReadOnlyList<string> texts,
+        TranslationDirection direction,
+        CancellationToken ct = default)
+    {
+        var terms = options.Glossary.Match(Prompts.JoinForGlossary(texts), direction);
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["translations"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject { ["type"] = "string" },
+                    ["minItems"] = texts.Count,
+                    ["maxItems"] = texts.Count,
+                },
+            },
+            ["required"] = new JsonArray("translations"),
+        };
+        var (content, elapsed, input, output) =
+            await ChatAsync(Prompts.ForBatch(direction), Prompts.BatchUserTurn(texts, terms, direction), schema, ct);
+        return new BatchTranslationResult(AnswerJson.ExtractTranslations(content, texts.Count), elapsed, input, output);
+    }
+
+    /// <summary>지시문과 사용자 메시지로 /api/chat 을 한 번 부르고 답(message.content)을 돌려준다</summary>
+    private async Task<(string Content, TimeSpan Elapsed, long? Input, long? Output)> ChatAsync(
+        string systemPrompt, string userTurn, JsonNode format, CancellationToken ct)
+    {
         var body = new JsonObject
         {
             ["model"] = options.Model,
             ["stream"] = false,
             ["think"] = false, // 생각하는 모델(qwen3 등)도 바로 답하게 한다 — 채팅 번역에는 생각이 필요 없고 느려진다
             ["keep_alive"] = options.KeepAlive,
-            ["format"] = AnswerSchema.DeepClone(),
+            ["format"] = format,
             ["options"] = new JsonObject { ["temperature"] = 0.2, ["num_ctx"] = ContextLength },
             ["messages"] = new JsonArray
             {
-                new JsonObject { ["role"] = "system", ["content"] = Prompts.For(direction) },
-                new JsonObject
-                {
-                    ["role"] = "user",
-                    ["content"] = Prompts.UserTurn(text, options.Glossary.Match(text, direction), direction),
-                },
+                new JsonObject { ["role"] = "system", ["content"] = systemPrompt },
+                new JsonObject { ["role"] = "user", ["content"] = userTurn },
             },
         };
 
@@ -205,7 +241,7 @@ public sealed class OllamaTranslator(OllamaOptions options) : ITranslator
         var input = JsonRead.Int64(root, "prompt_eval_count");
         var output = JsonRead.Int64(root, "eval_count");
 
-        return new TranslationResult(AnswerJson.ExtractTranslation(content), elapsed, input, output);
+        return (content, elapsed, input, output);
     }
 
     private static string Trim(string s) => s.Length <= 300 ? s.Trim() : s[..300].Trim() + "…";

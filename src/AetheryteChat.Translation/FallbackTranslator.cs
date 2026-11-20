@@ -151,6 +151,23 @@ public sealed class FallbackTranslator : ITranslator
     /// </exception>
     public async Task<TranslationResult> TranslateAsync(string text, TranslationDirection direction, CancellationToken ct = default)
     {
+        var (result, member) = await RunAsync(t => t.TranslateAsync(text, direction, ct), ct);
+        return result with { Engine = member.Translator.ShortName };
+    }
+
+    /// <summary>
+    /// 여러 줄을 한 번에 — 도구를 고르고 넘어가는 규칙은 <see cref="TranslateAsync"/> 와 같다.
+    /// 다만 답의 줄 수가 맞지 않으면(IsMalformedBatch) 도구 탓이 아니므로 건너뛰지 않고 그대로 올린다 — 부르는 쪽이 줄마다 다시 번역한다
+    /// </summary>
+    public async Task<BatchTranslationResult> TranslateBatchAsync(
+        IReadOnlyList<string> texts, TranslationDirection direction, CancellationToken ct = default)
+    {
+        var (result, member) = await RunAsync(t => t.TranslateBatchAsync(texts, direction, ct), ct);
+        return result with { Engine = member.Translator.ShortName };
+    }
+
+    private async Task<(T Result, Member Member)> RunAsync<T>(Func<ITranslator, Task<T>> translate, CancellationToken ct)
+    {
         // 아직 확인 중인 도구도 쓸 수 있을지 모르니 시도한다 (확인하기 전에 번역을 부른 경우 등)
         var usable = _members.Where(m => m.Status is FallbackMemberStatus.Ready or FallbackMemberStatus.Checking).ToList();
         var order = usable.Where(m => !m.CoolingDown).Concat(usable.Where(m => m.CoolingDown)).ToList();
@@ -168,9 +185,13 @@ public sealed class FallbackTranslator : ITranslator
             ct.ThrowIfCancellationRequested();
             try
             {
-                var result = await member.Translator.TranslateAsync(text, direction, ct);
+                var result = await translate(member.Translator);
                 member.ClearCoolDown();
-                return result with { Engine = member.Translator.ShortName };
+                return (result, member);
+            }
+            catch (TranslationException e) when (e.IsMalformedBatch)
+            {
+                throw;
             }
             catch (Exception raw) when (raw is not OperationCanceledException || !ct.IsCancellationRequested)
             {

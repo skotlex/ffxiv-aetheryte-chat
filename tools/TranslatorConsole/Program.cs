@@ -3,6 +3,7 @@
 //   dotnet run --project tools/TranslatorConsole -- auth
 //   dotnet run --project tools/TranslatorConsole -- ja2ko "零式4層、初見です。よろしくお願いします！"
 //   dotnet run --project tools/TranslatorConsole -- ko2ja --effort low          (줄마다 번역, 빈 줄로 끝)
+//   dotnet run --project tools/TranslatorConsole -- ja2ko --batch               (빈 줄까지 받은 줄을 한 번에 — 공략 매크로처럼)
 //
 // 옵션: --engine <claude|codex|ollama|papago> (기본 claude), --model <name> (claude 기본 haiku, ollama 기본 gemma3:12b),
 //       --effort <low|medium|high> (claude: --effort, codex: reasoning effort), --exe <실행 파일 경로>,
@@ -29,6 +30,7 @@ string? model = null, effort = null, exe = null, endpoint = null;
 bool codexLightweight = true;
 string? glossaryPath = null;
 bool noGlossary = false;
+bool batch = false;
 var positional = new List<string>();
 for (var i = 0; i < args.Length; i++)
 {
@@ -42,6 +44,7 @@ for (var i = 0; i < args.Length; i++)
         case "--codex-standard": codexLightweight = false; break;
         case "--glossary": glossaryPath = args[++i]; break;
         case "--no-glossary": noGlossary = true; break;
+        case "--batch": batch = true; break;
         default: positional.Add(args[i]); break;
     }
 }
@@ -212,9 +215,35 @@ try
         return 0;
     }
 
+    if (batch)
+    {
+        var lines = new List<string>();
+        while (Console.ReadLine() is { Length: > 0 } line)
+            lines.Add(line.TrimStart('﻿'));
+        await TranslateBatch(lines);
+        return 0;
+    }
+
     while (Console.ReadLine() is { Length: > 0 } line)
         await TranslateOne(line);
     return 0;
+
+    async Task TranslateBatch(IReadOnlyList<string> texts)
+    {
+        try
+        {
+            var r = await translator.TranslateBatchAsync(texts, direction);
+            for (var i = 0; i < texts.Count; i++)
+                Console.WriteLine($"{texts[i]}\n→ {r.Texts[i]}");
+            if (r.Engine is { } usedEngine)
+                Console.Error.WriteLine($"   번역한 도구: {usedEngine}");
+            Console.Error.WriteLine($"   {texts.Count}줄, {r.Elapsed.TotalSeconds:0.0}초, 입력 {r.InputTokens?.ToString("N0") ?? "?"} / 출력 {r.OutputTokens?.ToString("N0") ?? "?"} 토큰");
+        }
+        catch (TranslationException e)
+        {
+            Console.Error.WriteLine($"✗ {e.Message}{(e.IsAuthError ? " [로그인 필요]" : "")}{(e.IsMalformedBatch ? " [줄 수가 맞지 않음 — 플러그인은 줄마다 다시 번역]" : "")}");
+        }
+    }
 
     async Task TranslateOne(string text)
     {

@@ -63,6 +63,28 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
         TranslationDirection direction,
         CancellationToken ct = default)
     {
+        var terms = options.Glossary.Match(text, direction);
+        var (answer, elapsed, input, output) =
+            await AskAsync(Prompts.For(direction), Prompts.UserTurn(text, terms, direction), ct);
+        return new TranslationResult(AnswerJson.ExtractTranslation(answer), elapsed, input, output);
+    }
+
+    /// <summary>여러 줄을 한 번의 호출로 번역한다 (앞뒤 줄을 문맥으로 쓴다)</summary>
+    public async Task<BatchTranslationResult> TranslateBatchAsync(
+        IReadOnlyList<string> texts,
+        TranslationDirection direction,
+        CancellationToken ct = default)
+    {
+        var terms = options.Glossary.Match(Prompts.JoinForGlossary(texts), direction);
+        var (answer, elapsed, input, output) =
+            await AskAsync(Prompts.ForBatch(direction), Prompts.BatchUserTurn(texts, terms, direction), ct);
+        return new BatchTranslationResult(AnswerJson.ExtractTranslations(answer, texts.Count), elapsed, input, output);
+    }
+
+    /// <summary>지시문과 사용자 메시지로 CLI 를 한 번 실행하고 모델의 답(봉투 안의 result)을 돌려준다</summary>
+    private async Task<(string Answer, TimeSpan Elapsed, long? Input, long? Output)> AskAsync(
+        string systemPrompt, string userTurn, CancellationToken ct)
+    {
         var args = new List<string>
         {
             "-p",
@@ -72,15 +94,13 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
             "--strict-mcp-config",
             "--setting-sources", "",
             "--model", options.Model,
-            "--system-prompt", Prompts.For(direction),
+            "--system-prompt", systemPrompt,
         };
         if (!string.IsNullOrEmpty(options.Effort))
             args.AddRange(["--effort", options.Effort]);
 
         // 용어는 명령줄이 아니라 stdin 으로 넘긴다 — 윈도우 명령줄 길이 한도(약 32,000자)에 걸리지 않게
-        var terms = options.Glossary.Match(text, direction);
-        var run = await CliRunner.RunAsync(
-            Executable, args, Prompts.UserTurn(text, terms, direction), WorkDir, options.Timeout, ct);
+        var run = await CliRunner.RunAsync(Executable, args, userTurn, WorkDir, options.Timeout, ct);
 
         if (run.ExitCode != 0 && string.IsNullOrWhiteSpace(run.StdOut))
             throw new TranslationException($"claude 종료 코드 {run.ExitCode}: {Trim(run.StdErr)}")
@@ -88,14 +108,15 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
                 IsAuthError = AuthErrors.Matches(run.StdErr),
             };
 
-        return ParseEnvelope(run.StdOut, run.Elapsed);
+        var (answer, input, output) = ParseEnvelope(run.StdOut);
+        return (answer, run.Elapsed, input, output);
     }
 
     /// <summary>
     /// 봉투 JSON: {"type":"result","is_error":false,"result":"...","usage":{...}}.
-    /// 답은 result 문자열 안의 JSON 이다.
+    /// 답은 result 문자열 안의 JSON 이다 — 그 문자열과 토큰 수를 돌려준다.
     /// </summary>
-    internal static TranslationResult ParseEnvelope(string stdout, TimeSpan elapsed)
+    internal static (string Answer, long? Input, long? Output) ParseEnvelope(string stdout)
     {
         JsonDocument envelope;
         try
@@ -125,7 +146,7 @@ public sealed class ClaudeCliTranslator(ClaudeCliOptions options) : ITranslator
                 output = SumTokens(usage, "output_tokens");
             }
 
-            return new TranslationResult(AnswerJson.ExtractTranslation(resultText), elapsed, input, output);
+            return (resultText, input, output);
         }
     }
 

@@ -26,6 +26,20 @@ public sealed record TranslationResult(
     public string? Engine { get; init; }
 }
 
+/// <param name="Texts">원문과 같은 순서, 같은 개수의 번역문</param>
+/// <param name="Elapsed">모든 줄을 번역하기까지 걸린 시간</param>
+/// <param name="InputTokens">입력 토큰 합계. 엔진이 알려 주지 않으면 null</param>
+/// <param name="OutputTokens">출력 토큰 합계. 엔진이 알려 주지 않으면 null</param>
+public sealed record BatchTranslationResult(
+    IReadOnlyList<string> Texts,
+    TimeSpan Elapsed,
+    long? InputTokens,
+    long? OutputTokens)
+{
+    /// <summary>실제로 번역한 도구의 ShortName (<see cref="TranslationResult.Engine"/> 과 같다). null 이면 부른 번역기 자신이다</summary>
+    public string? Engine { get; init; }
+}
+
 public interface ITranslator
 {
     string Name { get; }
@@ -54,6 +68,32 @@ public interface ITranslator
         string text,
         TranslationDirection direction,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// 한 사람이 잇달아 보낸 여러 줄(레이드 공략 매크로 등)을 한 번에 번역한다. 앞뒤 줄을 문맥으로 쓰고 도구를 한 번만 부른다.
+    /// 기본 구현은 한 줄씩 차례로 번역한다 — 지시문을 넣을 수 없는 도구(Papago)는 줄을 합쳐 보내면 줄이 어긋날 수 있어서
+    /// </summary>
+    /// <exception cref="TranslationException">
+    /// 실행 실패·시간 초과 등. 답의 줄 수가 맞지 않거나 읽지 못했으면 <see cref="TranslationException.IsMalformedBatch"/>
+    /// </exception>
+    async Task<BatchTranslationResult> TranslateBatchAsync(
+        IReadOnlyList<string> texts,
+        TranslationDirection direction,
+        CancellationToken ct = default)
+    {
+        var translated = new List<string>(texts.Count);
+        var elapsed = TimeSpan.Zero;
+        long? input = 0, output = 0;
+        foreach (var text in texts)
+        {
+            var r = await TranslateAsync(text, direction, ct);
+            translated.Add(r.Text);
+            elapsed += r.Elapsed;
+            input = input is { } i && r.InputTokens is { } ri ? i + ri : null;
+            output = output is { } o && r.OutputTokens is { } ro ? o + ro : null;
+        }
+        return new BatchTranslationResult(translated, elapsed, input, output);
+    }
 }
 
 public sealed class TranslationException(string message, Exception? inner = null)
@@ -61,4 +101,9 @@ public sealed class TranslationException(string message, Exception? inner = null
 {
     /// <summary>로그인이 안 됐거나 풀려서 실패했다 — 다시 로그인하면 될 일이다</summary>
     public bool IsAuthError { get; init; }
+
+    /// <summary>
+    /// 여러 줄을 한 번에 번역했는데 답의 줄 수가 맞지 않거나 형식을 읽지 못했다 — 도구는 멀쩡하니 줄마다 다시 번역하면 된다
+    /// </summary>
+    public bool IsMalformedBatch { get; init; }
 }
