@@ -14,6 +14,10 @@ kagerou 설정의 사용자 CSS 칸 내용을 모두 지우고 [kagerou-umbra.cs
 규칙을 직접 더할 때는 선택자 앞에 `html body` 를 붙입니다. kagerou 는 기본 CSS 를 사용자 CSS 보다
 늦게 붙여서, 우선순위가 같으면 기본값이 이깁니다.
 
+## 같은 색의 Dalamud 스타일 (Aetheryte Dark)
+
+미터기와 같은 색으로 맞춘 Dalamud 스타일은 [../dalamud-style](../dalamud-style/README.md) 에 있습니다.
+
 ## 미리보기
 
 ```
