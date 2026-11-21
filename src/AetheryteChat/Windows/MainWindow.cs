@@ -114,14 +114,15 @@ internal sealed class MainWindow : StyledWindow, IDisposable
     private static float UnreadDotRoom => ImGui.GetStyle().ItemInnerSpacing.X + UnreadDotRadius * 2;
 
     /// <summary>바로 앞 탭의 오른쪽 안쪽(이름 뒤 빈칸 자리)에 안 읽은 대화 점을 그린다</summary>
-    private static void DrawUnreadDot()
+    private static void DrawUnreadDot(Configuration config)
     {
+        var color = config.UnreadDotColor is { } rgb ? new Vector4(rgb, 1f) : UnreadColor;
         var min = ImGui.GetItemRectMin();
         var max = ImGui.GetItemRectMax();
         var radius = UnreadDotRadius;
         // 탭 오른쪽 안쪽 여백은 FramePadding.X + 1 (ImGui 1.88 TabItemCalcSize)
         var center = new Vector2(max.X - ImGui.GetStyle().FramePadding.X - 1 - radius, (min.Y + max.Y) / 2);
-        ImGui.GetWindowDrawList().AddCircleFilled(center, radius, ImGui.GetColorU32(UnreadColor));
+        ImGui.GetWindowDrawList().AddCircleFilled(center, radius, ImGui.GetColorU32(color));
     }
 
     private const string AddChatTabLabel = "+##addChatTab";
@@ -185,7 +186,7 @@ internal sealed class MainWindow : StyledWindow, IDisposable
             var select = chatTab.Id == _selectChatTab || chatTab == focusTab;
             using var tab = ImRaii.TabItem(label.Text, select ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None);
             if (label.Unread)
-                DrawUnreadDot();
+                DrawUnreadDot(config);
             if (ImGui.IsItemClicked(ImGuiMouseButton.Right))
                 openMenu = chatTab;
             if (tab.Success)
@@ -497,6 +498,34 @@ internal sealed class MainWindow : StyledWindow, IDisposable
         }
         if (ImGui.Button("탭 추가##addChatTabSettings"))
             ChatTabEditor.Add(config);
+
+        ImGuiHelpers.ScaledDummy(2);
+        DrawUnreadDotColor(config);
+    }
+
+    /// <summary>[색] [초기화] 새 대화 점 색 — 보고 있지 않은 탭에 새 대화가 오면 붙는 점</summary>
+    private static void DrawUnreadDotColor(Configuration config)
+    {
+        var color = config.UnreadDotColor ?? new Vector3(UnreadColor.X, UnreadColor.Y, UnreadColor.Z);
+        if (ImGui.ColorEdit3("##unreadDotColor", ref color, ImGuiColorEditFlags.NoInputs))
+            config.UnreadDotColor = color;
+        if (ImGui.IsItemDeactivatedAfterEdit())
+            config.Save();
+
+        Layout.SameLineIfFits(Layout.ButtonWidth("초기화"));
+        using (ImRaii.Disabled(config.UnreadDotColor is null))
+        {
+            if (ImGui.Button("초기화##unreadDotColor"))
+            {
+                config.UnreadDotColor = null;
+                config.Save();
+            }
+        }
+        const string label = "새 대화 점 색";
+        Layout.SameLineIfFits(Layout.TextWidth(label));
+        ImGui.TextUnformatted(label);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("보고 있지 않은 채팅 탭에 새 대화가 오면 탭 이름 옆에 붙는 점의 색입니다");
     }
 
     /// <summary>

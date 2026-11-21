@@ -154,6 +154,9 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public List<ChatTab> ChatTabs { get; set; } = [];
 
+    /// <summary>보고 있지 않은 채팅 탭에 새 대화가 오면 붙는 점의 색(RGB 0~1). null 이면 기본 주황색</summary>
+    public System.Numerics.Vector3? UnreadDotColor { get; set; }
+
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 
     public const int CurrentVersion = 1;
