@@ -157,6 +157,12 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>보고 있지 않은 채팅 탭에 새 대화가 오면 붙는 점의 색(RGB 0~1). null 이면 기본 주황색</summary>
     public System.Numerics.Vector3? UnreadDotColor { get; set; }
 
+    /// <summary>
+    /// 번역한 줄에 원문도 같이 보일지. 끄면 원문 자리에 번역문만 보이고, 원문은 줄에 마우스를 올리면 보인다.
+    /// 표본 기록은 이 설정과 상관없이 원문을 남긴다
+    /// </summary>
+    public bool ShowOriginalText { get; set; }
+
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 
     public const int CurrentVersion = 1;

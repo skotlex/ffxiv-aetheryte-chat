@@ -16,9 +16,11 @@ internal static class WrappedText
     private static readonly Dictionary<string, (float Width, List<string> Lines)> Cache = new();
 
     /// <summary>현재 스타일 색으로 그린다. 색을 바꾸려면 호출 앞에서 ImGuiCol.Text 를 push 한다.</summary>
-    public static void Draw(string text)
+    public static void Draw(string text) => Draw(text, ImGui.GetContentRegionAvail().X);
+
+    /// <summary>정한 너비에 맞춰 그린다 — 툴팁처럼 남은 너비가 정해지지 않은 곳에서 쓴다</summary>
+    public static void Draw(string text, float width)
     {
-        var width = ImGui.GetContentRegionAvail().X;
         foreach (var line in GetLines(text, width))
             ImGui.TextUnformatted(line);
     }

@@ -12,7 +12,7 @@ using static AetheryteChat.Windows.UiCommon;
 namespace AetheryteChat.Windows;
 
 /// <summary>
-/// 받은 채팅(원문 + 한국어 번역)과 설정 창. 보내기 위치가 '채팅 아래' 면 받은 채팅 아래에 보내기를 붙인다.
+/// 받은 채팅(한국어 번역, 설정에 따라 원문도)과 설정 창. 보내기 위치가 '채팅 아래' 면 받은 채팅 아래에 보내기를 붙인다.
 /// </summary>
 internal sealed class MainWindow : StyledWindow, IDisposable
 {
@@ -288,25 +288,48 @@ internal sealed class MainWindow : StyledWindow, IDisposable
         if (chatTab.HiddenChannels.Count >= TranslateChannels.Groups.Length)
             WrappedText.Draw("이 탭에 보일 채널이 없습니다. 탭 이름을 오른쪽 클릭해 보일 채널을 고르세요.", DimColor);
 
+        var config = Owner.Configuration;
         foreach (var line in lines)
         {
             if (!chatTab.Shows(line.Channel))
                 continue;
+            DrawLine(line, config);
+        }
 
-            // 원문은 게임 채팅창과 같은 채널 색(채널은 색으로 구분), 번역은 구분되게 따로 정한 색으로 그린다
-            var original = $"[{line.Time:HH:mm}] {line.Sender}: {line.Message}";
+        // 맨 아래에 있으면 새 줄을 따라간다
+        if (ImGui.GetScrollY() >= ImGui.GetScrollMaxY())
+            ImGui.SetScrollHereY(1.0f);
+    }
+
+    /// <summary>
+    /// 받은 채팅 한 줄. 원문은 게임 채팅창과 같은 채널 색(채널은 색으로 구분), 번역은 구분되게 따로 정한 색으로 그린다.
+    /// 원문을 숨기면 끝난 번역문을 원문 자리에 채널 색으로 그리고, 원문은 줄에 마우스를 올리면 보인다
+    /// </summary>
+    private void DrawLine(ChatLine line, Configuration config)
+    {
+        var translations = line.Translations;
+        // 번역 도구를 바꾸면 번역이 더해진다 — 한 줄에 번역이 둘 이상일 때만 어느 모델의 번역인지 [모델] 로 구분한다
+        var showEngine = translations.Count > 1;
+        string Tag(LineTranslation t) => showEngine ? $"[{t.Engine}] " : "";
+
+        // 원문 자리에 그릴 번역: 가장 나중에 끝난 것. 아직 끝난 번역이 없으면 원문을 그린다
+        var headline = config.ShowOriginalText ? null : translations.LastOrDefault(t => t.State == TranslationState.Done);
+
+        using (ImRaii.Group())
+        {
+            var text = headline is null ? line.Message : $"{Tag(headline)}{headline.Result}";
+            var first = $"[{line.Time:HH:mm}] {line.Sender}: {text}";
             if (_channelColors.Get(line.Channel) is { } channelColor)
-                WrappedText.Draw(original, channelColor);
+                WrappedText.Draw(first, channelColor);
             else
-                WrappedText.Draw(original);
+                WrappedText.Draw(first);
 
-            // 번역 도구를 바꾸면 번역이 더해진다 — 한 줄에 번역이 둘 이상일 때만 어느 모델의 번역인지 [모델] 로 구분한다
             using var indent = ImRaii.PushIndent();
-            var translations = line.Translations;
-            var showEngine = translations.Count > 1;
             foreach (var t in translations)
             {
-                var tag = showEngine ? $"[{t.Engine}] " : "";
+                if (t == headline)
+                    continue;
+                var tag = Tag(t);
                 switch (t.State)
                 {
                     case TranslationState.Pending:
@@ -325,9 +348,12 @@ internal sealed class MainWindow : StyledWindow, IDisposable
             }
         }
 
-        // 맨 아래에 있으면 새 줄을 따라간다
-        if (ImGui.GetScrollY() >= ImGui.GetScrollMaxY())
-            ImGui.SetScrollHereY(1.0f);
+        if (headline is not null && ImGui.IsItemHovered())
+        {
+            using var tooltip = ImRaii.Tooltip();
+            ImGui.TextUnformatted("원문");
+            WrappedText.Draw(line.Message, 420 * ImGuiHelpers.GlobalScale);
+        }
     }
 
     private static readonly (SendPanelPlacement Placement, string Label)[] Placements =
@@ -477,7 +503,25 @@ internal sealed class MainWindow : StyledWindow, IDisposable
 
         ImGuiHelpers.ScaledDummy(8);
 
+        DrawChatDisplay(config);
+
+        ImGuiHelpers.ScaledDummy(8);
+
         DrawTranslateChannels(config);
+    }
+
+    /// <summary>받은 채팅의 보이는 모양: 원문을 같이 보일지</summary>
+    private static void DrawChatDisplay(Configuration config)
+    {
+        var showOriginal = config.ShowOriginalText;
+        if (ImGui.Checkbox("번역한 줄에 원문도 같이 보기", ref showOriginal))
+        {
+            config.ShowOriginalText = showOriginal;
+            config.Save();
+        }
+        WrappedText.Draw(
+            "끄면 번역한 줄은 원문 대신 번역문만 보입니다. 원문은 줄에 마우스를 올리면 볼 수 있습니다.",
+            DimColor);
     }
 
     /// <summary>채팅 탭 목록 — 탭마다 접었다 펼 수 있는 편집 칸. 탭을 오른쪽 클릭한 메뉴와 같은 내용이다</summary>
