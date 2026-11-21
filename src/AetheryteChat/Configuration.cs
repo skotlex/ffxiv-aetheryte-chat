@@ -174,7 +174,7 @@ public sealed class Configuration : IPluginConfiguration
     public System.Numerics.Vector3? UnreadDotColor { get; set; }
 
     /// <summary>
-    /// 번역한 줄에 원문도 같이 보일지. 끄면 원문 자리에 번역문만 보이고, 원문은 줄에 마우스를 올리면 보인다.
+    /// 번역한 줄에 원문도 같이 보일지. 끄면 원문 자리에 번역문만 보이고, 원문은 줄에 마우스를 올리면 보이고 누르면 복사된다.
     /// 표본 기록은 이 설정과 상관없이 원문을 남긴다
     /// </summary>
     public bool ShowOriginalText { get; set; }

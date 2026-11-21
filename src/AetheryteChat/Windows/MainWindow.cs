@@ -22,6 +22,11 @@ internal sealed class MainWindow : StyledWindow, IDisposable
     // 다음 프레임에 '번역 도구' 탭을 연다 — 아직 번역 도구를 고르지 않았거나 플러그인 목록의 설정 버튼을 눌렀을 때
     private bool _selectEngineTab;
 
+    // 원문을 복사한 줄과 시각 — 잠깐 동안 그 줄의 툴팁에 '복사했습니다' 를 붙인다
+    private static readonly TimeSpan CopiedNoticeTime = TimeSpan.FromSeconds(1.5);
+    private ChatLine? _copiedLine;
+    private DateTime _copiedAt;
+
     // 지난 프레임에 잰 보내기 묶음의 높이 — 받은 채팅 로그가 그만큼 비켜 준다 (보내기 높이는 번역 확인 줄에 따라 바뀐다)
     private float _sendPanelHeight;
 
@@ -303,7 +308,7 @@ internal sealed class MainWindow : StyledWindow, IDisposable
 
     /// <summary>
     /// 받은 채팅 한 줄. 원문은 게임 채팅창과 같은 채널 색(채널은 색으로 구분), 번역은 구분되게 따로 정한 색으로 그린다.
-    /// 원문을 숨기면 끝난 번역문을 원문 자리에 채널 색으로 그리고, 원문은 줄에 마우스를 올리면 보인다
+    /// 원문을 숨기면 끝난 번역문을 원문 자리에 채널 색으로 그리고, 원문은 줄에 마우스를 올리면 보이며 누르면 복사된다
     /// </summary>
     private void DrawLine(ChatLine line, Configuration config)
     {
@@ -348,12 +353,22 @@ internal sealed class MainWindow : StyledWindow, IDisposable
             }
         }
 
-        if (headline is not null && ImGui.IsItemHovered())
+        if (headline is null || !ImGui.IsItemHovered())
+            return;
+
+        // 원문을 숨긴 줄: 손 모양 커서로 누를 수 있음을 보이고, 누르면 원문을 클립보드에 복사한다
+        ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+        if (ImGui.IsItemClicked(ImGuiMouseButton.Left))
         {
-            using var tooltip = ImRaii.Tooltip();
-            ImGui.TextUnformatted("원문");
-            WrappedText.Draw(line.Message, 420 * ImGuiHelpers.GlobalScale);
+            ImGui.SetClipboardText(line.Message);
+            _copiedLine = line;
+            _copiedAt = DateTime.Now;
         }
+
+        using var tooltip = ImRaii.Tooltip();
+        WrappedText.Draw(line.Message, 420 * ImGuiHelpers.GlobalScale);
+        if (_copiedLine == line && DateTime.Now - _copiedAt < CopiedNoticeTime)
+            ImGui.TextColored(DimColor, "복사했습니다");
     }
 
     private static readonly (SendPanelPlacement Placement, string Label)[] Placements =
@@ -528,7 +543,7 @@ internal sealed class MainWindow : StyledWindow, IDisposable
             config.Save();
         }
         WrappedText.Draw(
-            "끄면 번역한 줄은 원문 대신 번역문만 보입니다. 원문은 줄에 마우스를 올리면 볼 수 있습니다.",
+            "끄면 번역한 줄은 원문 대신 번역문만 보입니다. 원문은 줄에 마우스를 올리면 볼 수 있고, 누르면 복사됩니다.",
             DimColor);
 
         ImGuiHelpers.ScaledDummy(4);
