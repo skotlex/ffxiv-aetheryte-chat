@@ -57,7 +57,8 @@ public sealed class Plugin : IDalamudPlugin
     public Plugin()
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
-        if (Configuration.Migrate())
+        var migrated = Configuration.Migrate();
+        if (Configuration.EnsureChatTabs() || migrated)
             Configuration.Save();
 
         WindowFont = new WindowFont(PluginInterface.UiBuilder.FontAtlas, Configuration.WindowFont);

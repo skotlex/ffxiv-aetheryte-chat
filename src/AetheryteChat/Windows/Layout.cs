@@ -58,6 +58,9 @@ internal static class Layout
     public static float ButtonWidth(string label) =>
         ImGui.CalcTextSize(VisibleLabel(label)).X + ImGui.GetStyle().FramePadding.X * 2;
 
+    /// <summary>닫기 버튼 없는 탭의 폭 (ImGui 1.88 TabItemCalcSize: 글자 + 안쪽 여백 양쪽 + 1)</summary>
+    public static float TabWidth(string label) => ButtonWidth(label) + 1f;
+
     /// <summary>체크박스 폭 (네모 + 간격 + 글자)</summary>
     public static float CheckboxWidth(string label) =>
         ImGui.GetFrameHeight() + ImGui.GetStyle().ItemInnerSpacing.X + ImGui.CalcTextSize(VisibleLabel(label)).X;

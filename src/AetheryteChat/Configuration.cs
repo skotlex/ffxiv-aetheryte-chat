@@ -14,6 +14,25 @@ public enum SendPanelPlacement
     SeparateWindow,
 }
 
+/// <summary>
+/// 받은 채팅 창의 탭 하나. 탭마다 보일 채널을 따로 고른다 (번역 여부는 '번역할 채널' 이 정하고, 탭은 보이기만 거른다)
+/// </summary>
+[Serializable]
+public sealed class ChatTab
+{
+    /// <summary>탭 ID — 이름을 바꿔도 탭 선택이 풀리지 않게 이름과 따로 둔다</summary>
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public string Name { get; set; } = "채팅";
+
+    /// <summary>이 탭에서 숨길 채널 묶음. 끈 것만 적어, 나중에 묶음이 늘어도 새 묶음은 기본으로 보인다</summary>
+    public HashSet<TranslateChannelGroup> HiddenChannels { get; set; } = [];
+
+    /// <summary>이 채널의 줄을 이 탭에 보일지</summary>
+    internal bool Shows(Dalamud.Game.Text.XivChatType channel) =>
+        TranslateChannels.GroupFor(channel) is { } group && !HiddenChannels.Contains(group);
+}
+
 public enum TranslationEngine
 {
     Claude,
@@ -129,6 +148,12 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public bool ShowOnlyWithGameChat { get; set; } = true;
 
+    /// <summary>
+    /// 받은 채팅 창의 탭들 (왼쪽부터). 늘 하나 이상 있다 — <see cref="EnsureChatTabs"/>.
+    /// 기본값을 여기서 채우면 설정을 읽을 때 저장된 탭 뒤에 덧붙어 늘어나므로 비워 두고 읽은 뒤에 채운다
+    /// </summary>
+    public List<ChatTab> ChatTabs { get; set; } = [];
+
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 
     public const int CurrentVersion = 1;
@@ -145,6 +170,33 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>번역에 쓸 용어집: 기본 용어(켜 두었으면) + 내 용어</summary>
     internal TermGlossary BuildGlossary() =>
         TermGlossary.Merge(UseDefaultGlossary ? TermGlossary.Default : TermGlossary.Empty, TermGlossary.Parse(PersonalGlossary));
+
+    /// <summary>
+    /// 채팅 탭이 하나도 없으면(처음 설치·이 기능 전의 설정) 모든 채널을 보이는 탭 하나를 만든다.
+    /// 설정 파일을 손으로 고쳐 비거나 ID 가 겹친 탭도 바로잡는다. 바꿨으면 true (저장은 부르는 쪽이 한다)
+    /// </summary>
+    internal bool EnsureChatTabs()
+    {
+        var changed = ChatTabs.RemoveAll(t => t is null) > 0;
+        var ids = new HashSet<Guid>();
+        foreach (var tab in ChatTabs)
+        {
+            tab.HiddenChannels ??= [];
+            tab.Name ??= "";
+            if (!ids.Add(tab.Id))
+            {
+                tab.Id = Guid.NewGuid();
+                ids.Add(tab.Id);
+                changed = true;
+            }
+        }
+        if (ChatTabs.Count == 0)
+        {
+            ChatTabs.Add(new ChatTab());
+            changed = true;
+        }
+        return changed;
+    }
 
     /// <summary>이전 버전의 설정을 지금 형식으로 옮긴다. 바꿨으면 true (저장은 부르는 쪽이 한다)</summary>
     internal bool Migrate()

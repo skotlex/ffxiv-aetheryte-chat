@@ -59,41 +59,136 @@ internal sealed class MainWindow : StyledWindow, IDisposable
 
     public void Dispose() => _engineTab.Dispose();
 
+    // 마지막으로 본 채팅 탭 — 단축키로 입력칸에 갈 때 이 탭을 연다
+    private Guid? _lastChatTab;
+
+    // 다음 프레임에 열 채팅 탭 (+ 로 새로 만든 탭)
+    private Guid? _selectChatTab;
+
+    // 지난 프레임에 그린 채팅 탭 순서. ImGui 탭 바는 탭을 새로 더할 때만 그리는 순서대로 다시 늘어놓으므로,
+    // 순서를 바꾸면 한 프레임 동안 Reorderable 을 켰다 꺼 다시 늘어놓게 한다 (이 플래그가 바뀌면 다시 정렬한다)
+    private Guid[] _chatTabOrder = [];
+
+    private static string ChatTabMenuId(ChatTab tab) => $"##chatTabMenu{tab.Id:N}";
+
+    private const string AddChatTabLabel = "+##addChatTab";
+
+    /// <summary>오른쪽 끝에 붙이는 탭 (그리는 순서대로)</summary>
+    private static readonly string[] RightTabLabels = ["번역 도구###engine", "설정###settings", "스타일###style"];
+
+    /// <summary>
+    /// 왼쪽 탭들과 오른쪽 탭들 사이의 남는 폭을 채우는 보이지 않는 탭. ImGui 1.88 은 탭 폭을 직접 정할 수 없어 빈칸 글자로 폭을 맞춘다.
+    /// 올림으로 조금 넓게 잡으면 탭 바가 넘친 만큼을 가장 넓은 탭(이 빈 탭)에서 줄여 오른쪽 끝이 딱 맞는다.
+    /// 줄어들면 '...' 이 그려지므로 글자색까지 투명하게 한다
+    /// </summary>
+    /// <param name="barWidth">탭 바 폭</param>
+    /// <param name="otherLabels">빈 탭을 뺀 모든 탭의 이름표</param>
+    private static void DrawTabSpacer(float barWidth, IReadOnlyList<string> otherLabels)
+    {
+        var spacing = ImGui.GetStyle().ItemInnerSpacing.X; // 탭 사이 간격 — 빈 탭까지 넣으면 간격은 탭 수만큼
+        var used = otherLabels.Sum(Layout.TabWidth) + spacing * otherLabels.Count;
+        var textWidth = barWidth - used - Layout.TabWidth("");
+        if (textWidth <= 0)
+            return; // 남는 폭이 없다 — 창이 좁으면 탭 바가 채팅 탭을 줄여 맞춘다
+
+        var spaces = (int)MathF.Ceiling(textWidth / Layout.TextWidth(" "));
+        ImGuiCol[] transparent =
+        [
+            ImGuiCol.Tab, ImGuiCol.TabHovered, ImGuiCol.TabActive, ImGuiCol.TabUnfocused, ImGuiCol.TabUnfocusedActive, ImGuiCol.Text,
+        ];
+        foreach (var col in transparent)
+            ImGui.PushStyleColor(col, Vector4.Zero);
+        // ### 로 ID 를 고정한다 — 폭이 바뀔 때마다 새 탭으로 여겨지지 않게
+        ImGui.TabItemButton($"{new string(' ', spaces)}###tabSpacer", ImGuiTabItemFlags.NoTooltip);
+        ImGui.PopStyleColor(transparent.Length);
+    }
+
     protected override void DrawContent()
     {
-        using var tabs = ImRaii.TabBar("##tabs");
+        var config = Owner.Configuration;
+        var order = config.ChatTabs.Select(t => t.Id).ToArray();
+        var reorder = !order.SequenceEqual(_chatTabOrder);
+        _chatTabOrder = order;
+        var barWidth = ImGui.GetContentRegionAvail().X;
+
+        using var tabs = ImRaii.TabBar("##tabs", reorder ? ImGuiTabBarFlags.Reorderable : ImGuiTabBarFlags.None);
         if (!tabs.Success)
             return;
 
-        var sendBelow = Owner.Configuration.SendPanelPlacement == SendPanelPlacement.BelowChat;
-        // 보이는 이름은 바뀌어도 탭 ID(### 뒤)는 같게 해 보내기 위치를 바꿔도 탭 선택이 풀리지 않게 한다
-        // 단축키로 입력칸에 가려는데 보내기가 채팅 탭에 붙어 있으면 채팅 탭을 연다 (다른 탭을 보고 있었어도)
-        var chatTabFlags = sendBelow && Owner.SendPanel.FocusPending ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
-        using (var tab = ImRaii.TabItem(sendBelow ? "채팅###chat" : "받은 채팅###chat", chatTabFlags))
+        var sendBelow = config.SendPanelPlacement == SendPanelPlacement.BelowChat;
+        // 단축키로 입력칸에 가려는데 보내기가 채팅 탭에 붙어 있으면 마지막으로 본 채팅 탭을 연다 (다른 탭을 보고 있었어도)
+        var focusTab = sendBelow && Owner.SendPanel.FocusPending
+            ? config.ChatTabs.FirstOrDefault(t => t.Id == _lastChatTab) ?? config.ChatTabs.FirstOrDefault()
+            : null;
+        ChatTab? openMenu = null;
+        // 메뉴에서 탭을 지우거나 옮겨도 이번 프레임은 그리던 목록 그대로 그린다
+        foreach (var chatTab in config.ChatTabs.ToArray())
         {
+            var select = chatTab.Id == _selectChatTab || chatTab == focusTab;
+            // 탭 ID(### 뒤)는 이름과 따로 둬 이름을 바꿔도 탭 선택이 풀리지 않게 한다
+            using var tab = ImRaii.TabItem(
+                $"{ChatTabEditor.DisplayName(chatTab)}###chat{chatTab.Id:N}",
+                select ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None);
+            if (ImGui.IsItemClicked(ImGuiMouseButton.Right))
+                openMenu = chatTab;
             if (tab.Success)
-                DrawChat(sendBelow);
+            {
+                _lastChatTab = chatTab.Id;
+                DrawChat(chatTab, sendBelow);
+            }
         }
-        var engineTabFlags = _selectEngineTab ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
+        _selectChatTab = null;
+
+        if (ImGui.TabItemButton(AddChatTabLabel, ImGuiTabItemFlags.NoTooltip))
+        {
+            var added = ChatTabEditor.Add(config);
+            _selectChatTab = added.Id;
+            openMenu = added; // 만들자마자 이름·채널을 고를 수 있게 메뉴를 연다
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("채팅 탭을 더합니다. 채팅 탭을 오른쪽 클릭하면 이름과 보일 채널을 바꿀 수 있습니다");
+
+        // 번역 도구·설정·스타일은 오른쪽 끝에 붙인다 — 왼쪽은 채팅 탭들이 쓴다.
+        // Trailing 은 탭이 넘칠 때 맨 뒤에 고정할 뿐 남는 폭이 있으면 앞 탭 바로 뒤에 붙으므로, 사이를 빈 탭으로 채운다
+        var leftLabels = config.ChatTabs.Select(t => ChatTabEditor.DisplayName(t)).Append(AddChatTabLabel);
+        DrawTabSpacer(barWidth, leftLabels.Concat(RightTabLabels).ToList());
+
+        var engineTabFlags = ImGuiTabItemFlags.Trailing | (_selectEngineTab ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None);
         _selectEngineTab = false;
-        using (var tab = ImRaii.TabItem("번역 도구###engine", engineTabFlags))
+        using (var tab = ImRaii.TabItem(RightTabLabels[0], engineTabFlags))
         {
             if (tab.Success)
                 _engineTab.Draw();
         }
-        using (var tab = ImRaii.TabItem("설정###settings"))
+        using (var tab = ImRaii.TabItem(RightTabLabels[1], ImGuiTabItemFlags.Trailing))
         {
             if (tab.Success)
                 DrawSettings();
         }
-        using (var tab = ImRaii.TabItem("스타일###style"))
+        using (var tab = ImRaii.TabItem(RightTabLabels[2], ImGuiTabItemFlags.Trailing))
         {
             if (tab.Success)
                 DrawStyleSettings();
         }
+
+        // 채팅 탭 메뉴는 탭 안이 아니라 탭 바 바로 밑에서 열고 그린다 — 탭 안은 선택 여부에 따라 ID 가 달라 열어 둔 메뉴를 못 찾는다
+        if (openMenu is not null)
+            ImGui.OpenPopup(ChatTabMenuId(openMenu));
+        foreach (var chatTab in config.ChatTabs.ToArray())
+            DrawChatTabMenu(config, chatTab);
     }
 
-    private void DrawChat(bool sendBelow)
+    /// <summary>채팅 탭을 오른쪽 클릭하면 뜨는 메뉴: 이름·보일 채널·순서·삭제</summary>
+    private static void DrawChatTabMenu(Configuration config, ChatTab chatTab)
+    {
+        using var popup = ImRaii.Popup(ChatTabMenuId(chatTab));
+        if (!popup.Success)
+            return;
+        if (ChatTabEditor.Draw(config, chatTab, columns: 3))
+            ImGui.CloseCurrentPopup();
+    }
+
+    private void DrawChat(ChatTab chatTab, bool sendBelow)
     {
         var queue = Owner.TranslationQueue;
 
@@ -116,7 +211,7 @@ internal sealed class MainWindow : StyledWindow, IDisposable
         using (var child = ImRaii.Child("##log", new Vector2(0, sendBelow ? -_sendPanelHeight : 0), true))
         {
             if (child.Success)
-                DrawLog();
+                DrawLog(chatTab);
         }
 
         if (sendBelow)
@@ -127,10 +222,17 @@ internal sealed class MainWindow : StyledWindow, IDisposable
         }
     }
 
-    private void DrawLog()
+    /// <summary>받은 채팅 가운데 이 탭에 보일 채널의 줄만 그린다</summary>
+    private void DrawLog(ChatTab chatTab)
     {
+        if (chatTab.HiddenChannels.Count >= TranslateChannels.Groups.Length)
+            WrappedText.Draw("이 탭에 보일 채널이 없습니다. 탭 이름을 오른쪽 클릭해 보일 채널을 고르세요.", DimColor);
+
         foreach (var line in Owner.ChatListener.Snapshot())
         {
+            if (!chatTab.Shows(line.Channel))
+                continue;
+
             // 원문은 게임 채팅창과 같은 채널 색(채널은 색으로 구분), 번역은 구분되게 따로 정한 색으로 그린다
             var original = $"[{line.Time:HH:mm}] {line.Sender}: {line.Message}";
             if (_channelColors.Get(line.Channel) is { } channelColor)
@@ -311,7 +413,31 @@ internal sealed class MainWindow : StyledWindow, IDisposable
 
         ImGuiHelpers.ScaledDummy(8);
 
+        DrawChatTabSettings(config);
+
+        ImGuiHelpers.ScaledDummy(8);
+
         DrawTranslateChannels(config);
+    }
+
+    /// <summary>채팅 탭 목록 — 탭마다 접었다 펼 수 있는 편집 칸. 탭을 오른쪽 클릭한 메뉴와 같은 내용이다</summary>
+    private static void DrawChatTabSettings(Configuration config)
+    {
+        ImGui.TextUnformatted("채팅 탭");
+        WrappedText.Draw(
+            "탭마다 보일 채널을 고릅니다. 채팅 탭을 오른쪽 클릭해도 바꿀 수 있습니다. " +
+            "탭에서 숨긴 채널도 '번역할 채널' 에 켜 두었으면 번역은 합니다.",
+            DimColor);
+
+        // 지우거나 옮겨도 이번 프레임은 그리던 목록 그대로 그린다
+        foreach (var chatTab in config.ChatTabs.ToArray())
+        {
+            using var node = ImRaii.TreeNode($"{ChatTabEditor.DisplayName(chatTab)}###chatTabSettings{chatTab.Id:N}");
+            if (node.Success)
+                ChatTabEditor.Draw(config, chatTab);
+        }
+        if (ImGui.Button("탭 추가##addChatTabSettings"))
+            ChatTabEditor.Add(config);
     }
 
     /// <summary>
