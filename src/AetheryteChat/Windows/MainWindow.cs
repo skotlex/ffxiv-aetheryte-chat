@@ -333,7 +333,18 @@ internal sealed class MainWindow : StyledWindow, IDisposable
                 }
             }
         }
-        if (config.WindowStyleName is not null && Owner.WindowStyles.Find(config.WindowStyleName) is null)
+        // 고른 스타일을 Dalamud 스타일 편집기에서 가져올 수 있는 문자열로 복사 — 이 플러그인 내장 스타일을 게임 전체 창에 쓰려고
+        var selectedStyle = Owner.WindowStyles.Find(config.WindowStyleName);
+        if (selectedStyle is not null)
+        {
+            const string copyLabel = "Dalamud 용으로 복사";
+            Layout.SameLineIfFits(Layout.ButtonWidth(copyLabel));
+            if (ImGui.Button(copyLabel))
+                ImGui.SetClipboardText(selectedStyle.Serialize());
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("이 스타일을 클립보드에 복사합니다. Dalamud 설정 > 스타일 편집기에서 클립보드에서 가져오기를 누르면 다른 Dalamud 창에도 쓸 수 있습니다");
+        }
+        if (config.WindowStyleName is not null && selectedStyle is null)
             WrappedText.Draw($"'{config.WindowStyleName}' 스타일을 찾지 못해 Dalamud 설정을 따릅니다.", ErrorColor);
         ImGuiHelpers.ScaledDummy(8);
 
