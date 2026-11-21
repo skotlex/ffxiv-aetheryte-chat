@@ -25,6 +25,9 @@ public sealed class Plugin : IDalamudPlugin
     private readonly WindowSystem _windowSystem = new("AetheryteChat");
     private readonly MainWindow _mainWindow;
 
+    /// <summary>입력칸에서 빠져나오면 그동안 누르고 있던 이동키를 게임에 다시 알린다</summary>
+    private readonly HeldKeyRestorer _heldKeyRestorer;
+
     internal Configuration Configuration { get; }
     internal ChatListener ChatListener { get; }
     internal TranslationQueue TranslationQueue { get; }
@@ -75,6 +78,8 @@ public sealed class Plugin : IDalamudPlugin
 
         PluginInterface.UiBuilder.Draw += _windowSystem.Draw;
         Framework.Update += CheckFocusHotkey;
+        _heldKeyRestorer = new HeldKeyRestorer(KeyState, () => Configuration.FocusInputKey);
+        Framework.Update += _heldKeyRestorer.Update;
         PluginInterface.UiBuilder.OpenMainUi += ToggleWindows;
         // 플러그인 목록의 설정(톱니) 버튼 — 번역 도구 탭을 연다
         PluginInterface.UiBuilder.OpenConfigUi += _mainWindow.OpenEngineTab;
@@ -246,6 +251,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         PluginInterface.UiBuilder.Draw -= _windowSystem.Draw;
         Framework.Update -= CheckFocusHotkey;
+        Framework.Update -= _heldKeyRestorer.Update;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleWindows;
         PluginInterface.UiBuilder.OpenConfigUi -= _mainWindow.OpenEngineTab;
         CommandManager.RemoveHandler(CommandName);
