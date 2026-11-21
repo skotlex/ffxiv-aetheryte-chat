@@ -19,6 +19,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IGameConfig GameConfig { get; private set; } = null!;
     [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
     [PluginService] internal static IKeyState KeyState { get; private set; } = null!;
+    [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
 
     private const string CommandName = "/achat";
 
@@ -80,6 +81,7 @@ public sealed class Plugin : IDalamudPlugin
         });
 
         PluginInterface.UiBuilder.Draw += _windowSystem.Draw;
+        Framework.Update += UpdateWindowsHidden;
         Framework.Update += CheckFocusHotkey;
         _heldKeyRestorer = new HeldKeyRestorer(KeyState, () => Configuration.FocusInputKey);
         Framework.Update += _heldKeyRestorer.Update;
@@ -87,7 +89,32 @@ public sealed class Plugin : IDalamudPlugin
         Framework.Update += _imeModeKeeper.Update;
         PluginInterface.UiBuilder.OpenMainUi += ToggleWindows;
         // 플러그인 목록의 설정(톱니) 버튼 — 번역 도구 탭을 연다
-        PluginInterface.UiBuilder.OpenConfigUi += _mainWindow.OpenEngineTab;
+        PluginInterface.UiBuilder.OpenConfigUi += OpenEngineTab;
+    }
+
+    /// <summary>
+    /// 게임 채팅창이 보이지 않아 이 플러그인 창들을 숨기는 중인지 (<see cref="Configuration.ShowOnlyWithGameChat"/>).
+    /// 게임 스레드에서 매 프레임 정하고 창이 그릴 때 읽는다
+    /// </summary>
+    internal bool WindowsHidden { get; private set; }
+
+    // 채팅창이 없을 때(타이틀 화면 등) 플러그인 목록의 버튼으로 연 창은 채팅창이 한 번 보일 때까지 숨기지 않는다 —
+    // 버튼을 눌러도 아무것도 안 뜨면 고장 난 것처럼 보이고, 로그인 전에 번역 도구를 고를 수 없다
+    private bool _shownByRequest;
+
+    private void UpdateWindowsHidden(IFramework framework)
+    {
+        var chatVisible = GameGui.GetAddonByName("ChatLog").IsVisible;
+        if (chatVisible)
+            _shownByRequest = false;
+        WindowsHidden = Configuration.ShowOnlyWithGameChat && !chatVisible && !_shownByRequest;
+    }
+
+    private void OpenEngineTab()
+    {
+        _shownByRequest = true;
+        WindowsHidden = false;
+        _mainWindow.OpenEngineTab();
     }
 
     /// <summary>받은 채팅 한 줄 (게임 스레드). 표본 기록을 켰으면 내 캐릭터 이름도 가리게 기억해 둔다</summary>
@@ -101,6 +128,20 @@ public sealed class Plugin : IDalamudPlugin
     /// <summary>받은 채팅 창을 열고 닫는다. 보내기가 별도 창이면 그 창도 같이 열고 닫는다</summary>
     private void ToggleWindows()
     {
+        // 숨겨 둔 창을 플러그인 목록에서 누르면 닫지 않고 보여 준다
+        if (WindowsHidden && _mainWindow.IsOpen)
+        {
+            _shownByRequest = true;
+            WindowsHidden = false;
+            if (Configuration.SendPanelPlacement == SendPanelPlacement.SeparateWindow)
+                SendWindow.IsOpen = true;
+            return;
+        }
+        if (!_mainWindow.IsOpen)
+        {
+            _shownByRequest = true;
+            WindowsHidden = false;
+        }
         _mainWindow.Toggle();
         if (Configuration.SendPanelPlacement == SendPanelPlacement.SeparateWindow)
             SendWindow.IsOpen = _mainWindow.IsOpen;
@@ -116,7 +157,7 @@ public sealed class Plugin : IDalamudPlugin
     private void CheckFocusHotkey(IFramework framework)
     {
         var key = Configuration.FocusInputKey;
-        if (key == VirtualKey.NO_KEY || !KeyState.IsVirtualKeyValid(key))
+        if (key == VirtualKey.NO_KEY || !KeyState.IsVirtualKeyValid(key) || WindowsHidden)
             return;
 
         // 들어가거나 빠져나온 뒤에는 키를 한 번 뗄 때까지 다시 반응하지 않는다 — 길게 누르면 생기는 반복 입력으로
@@ -255,11 +296,12 @@ public sealed class Plugin : IDalamudPlugin
     public void Dispose()
     {
         PluginInterface.UiBuilder.Draw -= _windowSystem.Draw;
+        Framework.Update -= UpdateWindowsHidden;
         Framework.Update -= CheckFocusHotkey;
         Framework.Update -= _heldKeyRestorer.Update;
         Framework.Update -= _imeModeKeeper.Update;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleWindows;
-        PluginInterface.UiBuilder.OpenConfigUi -= _mainWindow.OpenEngineTab;
+        PluginInterface.UiBuilder.OpenConfigUi -= OpenEngineTab;
         CommandManager.RemoveHandler(CommandName);
 
         _windowSystem.RemoveAllWindows();

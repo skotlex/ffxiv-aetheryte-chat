@@ -261,6 +261,21 @@ internal sealed class MainWindow : StyledWindow, IDisposable
             DimColor);
     }
 
+    /// <summary>게임 채팅창이 보일 때만 이 창을 보일지</summary>
+    private static void DrawShowOnlyWithGameChat(Configuration config)
+    {
+        var only = config.ShowOnlyWithGameChat;
+        if (ImGui.Checkbox("게임 채팅창이 보일 때만 창 표시", ref only))
+        {
+            config.ShowOnlyWithGameChat = only;
+            config.Save();
+        }
+        WrappedText.Draw(
+            "로딩 화면, 타이틀·캐릭터 선택 화면처럼 게임 채팅창이 사라지는 동안은 이 창을 숨깁니다. " +
+            "컷신·단체 사진(GPose)·UI 숨기기 중에는 이 설정과 상관없이 숨겨집니다.",
+            DimColor);
+    }
+
     /// <summary>알트탭으로 돌아오면 한/영 상태를 되돌릴지</summary>
     private static void DrawKeepImeMode(Configuration config)
     {
@@ -281,6 +296,10 @@ internal sealed class MainWindow : StyledWindow, IDisposable
         var config = Owner.Configuration;
 
         DrawSendPlacement(config);
+
+        ImGuiHelpers.ScaledDummy(8);
+
+        DrawShowOnlyWithGameChat(config);
 
         ImGuiHelpers.ScaledDummy(8);
 

@@ -123,6 +123,12 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public bool KeepImeModeOnRefocus { get; set; } = true;
 
+    /// <summary>
+    /// 게임 채팅창(ChatLog)이 화면에 보일 때만 이 플러그인 창을 보일지. 로딩 화면·타이틀·캐릭터 선택처럼 채팅을 쓸 수 없는
+    /// 동안은 숨긴다. 컷신·GPose·UI 숨기기 때는 이 설정과 상관없이 Dalamud 가 숨긴다
+    /// </summary>
+    public bool ShowOnlyWithGameChat { get; set; } = true;
+
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 
     public const int CurrentVersion = 1;

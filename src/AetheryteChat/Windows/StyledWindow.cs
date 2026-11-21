@@ -16,6 +16,9 @@ internal abstract class StyledWindow(Plugin plugin, string name) : Window(name)
     private StyleModel? _pushedStyle; // PreDraw 에서 push 한 스타일 — PostDraw 에서 같은 것을 pop 한다
     private int _pushedColorCount;    // PreDraw 에서 push 한 색 개수 (배경 + 컨트롤 색)
 
+    // 게임 채팅창이 보이지 않으면 그리지 않는다. 창을 닫는 것은 아니라 IsOpen·OnClose 는 그대로다
+    public override bool DrawConditions() => !Owner.WindowsHidden;
+
     public override void PreDraw()
     {
         var config = Owner.Configuration;
