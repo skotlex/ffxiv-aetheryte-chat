@@ -33,6 +33,21 @@ internal sealed class MainWindow : StyledWindow, IDisposable
         };
         _engineTab = new EngineTab(plugin);
         _selectEngineTab = plugin.Configuration.Engine is null;
+        IsOpen = plugin.Configuration.MainWindowOpen;
+    }
+
+    // 창을 열고 닫을 때(/achat·닫기 버튼·단축키) 기억해 두었다가 다음에 플러그인을 켤 때 그대로 연다.
+    // 게임을 끄거나 플러그인을 내릴 때는 불리지 않아 마지막 상태가 남는다
+    public override void OnOpen() => RememberOpen(true);
+
+    public override void OnClose() => RememberOpen(false);
+
+    private void RememberOpen(bool open)
+    {
+        if (Owner.Configuration.MainWindowOpen == open)
+            return;
+        Owner.Configuration.MainWindowOpen = open;
+        Owner.Configuration.Save();
     }
 
     /// <summary>창을 열고 '번역 도구' 탭을 보여 준다</summary>

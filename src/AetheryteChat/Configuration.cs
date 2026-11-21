@@ -99,6 +99,12 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public string? SampleLogDirectory { get; set; }
 
+    /// <summary>
+    /// 받은 채팅 창이 열려 있었는지. 게임·플러그인을 다시 켜면 이대로 연다 — 매번 /achat 을 치지 않게.
+    /// 처음 설치했을 때도 창이 보이게 기본은 연다
+    /// </summary>
+    public bool MainWindowOpen { get; set; } = true;
+
     /// <summary>보내기 위치. 기본은 받은 채팅 아래</summary>
     public SendPanelPlacement SendPanelPlacement { get; set; } = SendPanelPlacement.BelowChat;
 

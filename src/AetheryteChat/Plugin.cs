@@ -63,6 +63,8 @@ public sealed class Plugin : IDalamudPlugin
         SendPanel = new SendPanel(this);
         _mainWindow = new MainWindow(this);
         SendWindow = new SendWindow(this);
+        // 받은 채팅 창을 지난번처럼 열었으면 별도 보내기 창도 같이 연다 (/achat 으로 열 때와 같게)
+        SendWindow.IsOpen = _mainWindow.IsOpen && Configuration.SendPanelPlacement == SendPanelPlacement.SeparateWindow;
         _windowSystem.AddWindow(_mainWindow);
         _windowSystem.AddWindow(SendWindow);
 
