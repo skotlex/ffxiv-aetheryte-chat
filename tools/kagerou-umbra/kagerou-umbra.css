@@ -1,0 +1,356 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+
+/* ================================================================
+ * kagerou — Umbra 스타일
+ *
+ * 설정 > 사용자 CSS 칸의 내용을 모두 지우고 이 파일 전체를 붙여 넣습니다.
+ *
+ * kagerou 는 기본 스타일시트를 사용자 CSS 보다 늦게 붙이므로, 같은 우선순위면
+ * 기본값이 이깁니다. 그래서 모든 선택자 앞에 `html body` 를 붙여 우선순위를
+ * 올렸습니다. 직접 규칙을 더할 때도 같은 방식으로 쓰면 됩니다.
+ *
+ * 색은 아래 :root 의 값만 바꾸면 전체에 반영됩니다.
+ * ================================================================ */
+
+:root {
+  --um-font: 'Noto Sans KR', 'Noto Sans CJK KR', 'Malgun Gothic', '맑은 고딕', 'Segoe UI', sans-serif;
+
+  /* 창 */
+  --um-titlebar: rgba(25, 25, 25, 0.97);   /* 제목 줄·아래 탭 줄 */
+  --um-window: rgba(31, 31, 31, 0.93);     /* 본문 배경 */
+  --um-popup: rgba(30, 30, 30, 0.98);      /* 드롭다운·툴팁 */
+  --um-border: #3a3a3a;                    /* 창·칸 테두리 */
+  --um-border-strong: #555555;             /* 선택된 탭, 마우스를 올린 칸 */
+
+  /* 칸 (한 사람 한 줄) */
+  --um-item: #292929;
+  --um-item-rgb: 41, 41, 41;               /* --um-item 과 같은 색을 숫자로 */
+  --um-me-item: #313131;                   /* 내 줄 */
+  --um-me-item-rgb: 49, 49, 49;
+  --um-me-border: #7a7a7a;
+
+  /* 글자 */
+  --um-text: #e6e6e6;
+  --um-text-dim: #8c8c8c;
+  --um-me-text: #ffffff;
+
+  /* 게이지: 칸 전체를 직업 색으로 옅게 칠하고, 아래쪽에 진한 선을 둡니다 */
+  --um-gauge-veil: 0.8;                  /* 0 이면 직업 색 그대로, 1 이면 선만 보임 */
+  --um-gauge-line: 2px;
+
+  --um-radius: 5px;                        /* 창 모서리 */
+  --um-radius-sm: 3px;                     /* 칸·버튼 모서리 */
+  --um-hover: rgba(255, 255, 255, 0.07);
+}
+
+/* ---------------------------------------------------------------- 공통 */
+
+html body {
+  font-family: var(--um-font);
+}
+html body mark {
+  color: var(--um-text);
+}
+html body a {
+  color: var(--um-text);
+}
+
+html ::-webkit-scrollbar-thumb {
+  background: #4a4a4a !important;
+  border-radius: 2px !important;
+}
+html ::-webkit-scrollbar-thumb:hover {
+  background: #5c5c5c !important;
+}
+
+/* ---------------------------------------------------------------- 제목 줄 */
+
+html body nav > .container {
+  background: var(--um-titlebar);
+  border: 1px solid var(--um-border);
+  border-radius: var(--um-radius) var(--um-radius) 0 0;
+  box-shadow: none;
+  color: var(--um-text);
+  fill: var(--um-text);
+}
+
+html body .history {
+  line-height: calc(2.5rem - 2px);
+}
+html body.narrow-nav .history {
+  line-height: calc(1.75rem - 2px);
+}
+
+html body #history-icon {
+  fill: var(--um-text-dim);
+  transition: background-color 150ms ease;
+}
+html body #history-icon:hover {
+  background: var(--um-hover);
+}
+html body .history.enabled #history-icon {
+  fill: var(--um-text);          /* 지난 전투를 보는 중 */
+}
+
+html body #history-time {
+  color: var(--um-text);
+  font-weight: 500;
+}
+html body #history-mob {
+  color: var(--um-text);
+  margin-left: 0.25rem;
+}
+html body #history-region {
+  color: var(--um-text-dim);
+  opacity: 1;
+  padding-right: 0.25rem;
+}
+
+html body .buttons li.button {
+  transition: background-color 150ms ease;
+}
+html body .buttons li.button:hover {
+  background: var(--um-hover);
+}
+
+/* ---------------------------------------------------------------- 드롭다운·툴팁 */
+
+html body .dropdown,
+html body #nav-label {
+  background: var(--um-popup);
+  border: 1px solid var(--um-border-strong);
+  border-radius: var(--um-radius-sm);
+  box-shadow: 0 0.375rem 1rem rgba(0, 0, 0, 0.55);
+  color: var(--um-text);
+  fill: var(--um-text);
+}
+html body .dropdown {
+  margin-top: 0.125rem;
+}
+html body .dropdown > li:hover {
+  background: var(--um-hover);
+}
+html body .dropdown .seperator {
+  border-top: 1px solid var(--um-border);
+}
+html body .dropdown .title {
+  color: var(--um-text-dim);
+  opacity: 1;
+}
+html body .dropdown-history .history-region {
+  color: var(--um-text-dim);
+  opacity: 1;
+}
+html body .history-current {
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0.125rem 0 0 var(--um-text) inset;
+}
+
+/* ---------------------------------------------------------------- 본문 창 */
+
+html body main {
+  border: 1px solid var(--um-border);
+  border-top: 0;
+  border-radius: 0 0 var(--um-radius) var(--um-radius);
+  overflow: hidden;
+  box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.45);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6);
+}
+
+html body #background {
+  background-color: var(--um-window);
+  opacity: 1;
+}
+
+html body main > ul {
+  color: var(--um-text);
+  fill: var(--um-text);
+}
+
+/* 열 이름 줄 — Umbra 의 'Left Side / Center / Right Side' 처럼 흐린 글자 */
+html body #header {
+  background: transparent;
+  color: var(--um-text-dim);
+  text-shadow: none;
+  width: auto;                   /* 기본값 100% 에 좌우 여백이 더해지면 값 줄보다 길어져 열이 어긋남 */
+  margin: 0.25rem 0.375rem 0;
+  padding-right: 0.25rem;
+  border: 1px solid transparent;
+  line-height: calc(var(--graph-height) - 2px);
+}
+
+/* ---------------------------------------------------------------- 칸 (한 사람 한 줄) */
+
+html body #table {
+  padding: 0.25rem 0.375rem 1.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+html body #table > li {
+  background: var(--um-item);
+  border: 1px solid var(--um-border);
+  border-radius: var(--um-radius-sm);
+  margin: 0 0 0.1875rem;
+  padding-right: 0.25rem;
+  line-height: calc(var(--graph-height) - 2px);
+  transition: width 200ms ease, height 200ms ease, border-color 150ms ease;
+}
+html body #table > li:hover {
+  border-color: var(--um-border-strong);
+}
+
+/* 2열·3열 탭 */
+html body #table[data-width='2'],
+html body #table[data-width='3'] {
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+}
+html body #table[data-width='2'] > li,
+html body #table[data-width='3'] > li {
+  margin: 0 0.125rem 0.1875rem;
+  background: var(--um-item);
+}
+
+/* 내 줄 */
+html body #table > li.me {
+  background: var(--um-me-item);
+  border-color: var(--um-me-border);
+  color: var(--um-me-text);
+}
+
+/* 직업 아이콘 — 테두리 두께만큼 줄여 비율을 맞춤 */
+html body main .flex-column-i-icon {
+  width: calc(var(--graph-height) - 2px);
+}
+
+/* 게이지: 직업 색을 칸 전체에 깔고 위를 반투명 칸 색으로 덮어 옅게 만든 뒤,
+ * 아래쪽 몇 픽셀만 덮지 않아 진한 선이 남게 합니다. */
+html body #table > li > .gauge {
+  height: 100%;
+  opacity: 1;
+}
+html body #table > li > .gauge::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: var(--um-gauge-line);
+  background: rgba(var(--um-item-rgb), var(--um-gauge-veil));
+}
+html body #table > li.me > .gauge::after {
+  background: rgba(var(--um-me-item-rgb), var(--um-gauge-veil));
+}
+
+/* 접었을 때(내 줄만 보기)는 다른 칸의 테두리·간격도 없앰 */
+html body.collapsed #table {
+  padding-top: 0;
+}
+html body.collapsed #table > li:not(.me) {
+  border-width: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+html body.collapsed #table[data-width='2'] > li.me,
+html body.collapsed #table[data-width='3'] > li.me {
+  background: var(--um-me-item);
+}
+html body.collapsed #header,
+html body.standby #header {
+  border-width: 0;
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- 아래 탭 줄 */
+
+html body footer {
+  background: var(--um-titlebar);
+  border-top: 1px solid var(--um-border);
+  color: var(--um-text);
+  text-shadow: none;
+  line-height: calc(1.5rem - 1px);
+}
+
+html body footer .tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  height: 100%;
+  padding: 0 0.25rem !important;
+}
+html body .tabs span {
+  padding: 0 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--um-radius-sm);
+  line-height: calc(1.5rem - 0.4375rem);
+  color: var(--um-text-dim);
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
+}
+html body .tabs span:hover {
+  color: var(--um-text);
+  background: var(--um-hover);
+}
+html body .tabs span.active {
+  color: var(--um-text);
+  background: var(--um-item);
+  border-color: var(--um-border-strong);
+}
+
+html body .footer-stat > * {
+  border-left: 1px solid var(--um-border);
+  padding: 0 0.375rem;
+}
+html body .footer-stat small {
+  color: var(--um-text-dim);
+}
+
+/* ---------------------------------------------------------------- 대기 화면 (전투 전) */
+
+/* 대기 화면의 두 줄도 #table 의 자식이라 위 칸 스타일을 되돌림 */
+html body #table > li#init-menu,
+html body #table > li#patchnote {
+  border: 0;
+  border-radius: 0;
+  padding-right: 0;
+}
+
+html body #init-menu {
+  background: var(--um-titlebar) !important;
+  height: 2rem;
+  padding: 0.25rem 0.375rem;
+  border-bottom: 1px solid var(--um-border);
+}
+html body #init-menu > ul > li.text {
+  color: var(--um-text-dim);
+}
+html body #init-menu > ul li.button {
+  background: var(--um-item);
+  border: 1px solid var(--um-border);
+  border-radius: var(--um-radius-sm);
+  line-height: calc(1.5rem - 2px);
+  margin: 0 0 0 0.25rem;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+html body #init-menu > ul li.button:hover {
+  background: #303030;
+  border-color: var(--um-border-strong);
+}
+html body #init-menu > ul li .icon {
+  top: calc(0.25rem - 1px);
+}
+
+html body #patchnote {
+  padding: 0.375rem;
+  color: var(--um-text);
+}
+html body #patchnote h3 {
+  background: var(--um-item);
+  border: 1px solid var(--um-border);
+  border-radius: var(--um-radius-sm);
+  padding: 0.25rem 0.5rem;
+  margin: 0 0 0.1875rem;
+}
+html body #patchnote p {
+  color: var(--um-text-dim);
+  padding: 0.125rem 0.5rem 0.375rem;
+}
