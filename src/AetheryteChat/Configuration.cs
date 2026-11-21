@@ -33,6 +33,22 @@ public sealed class ChatTab
         TranslateChannels.GroupFor(channel) is { } group && !HiddenChannels.Contains(group);
 }
 
+/// <summary>받은 채팅에 보낸 사람 이름을 어떻게 보일지 (게임의 이름 표시 설정과 같은 네 가지)</summary>
+public enum SenderNameStyle
+{
+    /// <summary>Taro Yamada</summary>
+    Full,
+
+    /// <summary>Taro Y.</summary>
+    SurnameAbbreviated,
+
+    /// <summary>T. Yamada</summary>
+    ForenameAbbreviated,
+
+    /// <summary>T. Y.</summary>
+    Initials,
+}
+
 public enum TranslationEngine
 {
     Claude,
@@ -162,6 +178,9 @@ public sealed class Configuration : IPluginConfiguration
     /// 표본 기록은 이 설정과 상관없이 원문을 남긴다
     /// </summary>
     public bool ShowOriginalText { get; set; }
+
+    /// <summary>받은 채팅에 보낸 사람 이름을 어떻게 보일지. 귓속말 대상 등에는 늘 전체 이름을 쓴다</summary>
+    public SenderNameStyle SenderNameStyle { get; set; } = SenderNameStyle.Full;
 
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 

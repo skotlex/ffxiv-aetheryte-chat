@@ -47,6 +47,37 @@ internal sealed class LineTranslation(string engine, bool isOwnText = false)
 }
 
 /// <summary>
+/// 보낸 사람 이름을 나눈 것: 앞 기호(파티 번호 등) + '이름 성' + 다른 서버 플레이어면 서버 이름.
+/// 화면에 그릴 때 설정대로 줄여 보이려고 나눠 둔다
+/// </summary>
+internal sealed record SenderName(string Prefix, string Name, string? World)
+{
+    public string Format(SenderNameStyle style)
+    {
+        var name = Abbreviate(Name, style);
+        return World is null ? $"{Prefix}{name}" : $"{Prefix}{name}@{World}";
+    }
+
+    /// <summary>'이름 성' 을 줄인다. 두 낱말이 아니면(게임 이름 규칙에 없는 모양) 그대로 둔다</summary>
+    private static string Abbreviate(string name, SenderNameStyle style)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 2)
+            return name;
+        var (forename, surname) = (parts[0], parts[1]);
+        return style switch
+        {
+            SenderNameStyle.SurnameAbbreviated => $"{forename} {Initial(surname)}",
+            SenderNameStyle.ForenameAbbreviated => $"{Initial(forename)} {surname}",
+            SenderNameStyle.Initials => $"{Initial(forename)} {Initial(surname)}",
+            _ => name,
+        };
+    }
+
+    private static string Initial(string part) => $"{part[0]}.";
+}
+
+/// <summary>
 /// 받은 채팅 한 줄. 번역 도구를 바꾸면 새 도구의 번역이 더해지고, 이전 번역은 그대로 남는다.
 /// </summary>
 internal sealed class ChatLine(DateTime time, XivChatType channel, string sender, string message)
@@ -55,6 +86,14 @@ internal sealed class ChatLine(DateTime time, XivChatType channel, string sender
     public XivChatType Channel { get; } = channel;
     public string Sender { get; } = sender;
     public string Message { get; } = message;
+
+    /// <summary>보낸 사람 이름을 나눈 것. 플레이어 정보가 없는 줄은 null — 그때는 <see cref="Sender"/> 를 그대로 보인다</summary>
+    public SenderName? SenderName { get; init; }
+
+    /// <summary>
+    /// 화면에 보일 보낸 사람 이름 (설정대로 줄인 것). <see cref="Sender"/> 는 귓속말 대상 등에 쓰도록 줄이지 않고 둔다
+    /// </summary>
+    public string DisplaySender(SenderNameStyle style) => SenderName?.Format(style) ?? Sender;
 
     /// <summary>받은 순번 (1부터 늘어난다). 탭마다 어디까지 봤는지 적어 안 읽은 대화를 가린다</summary>
     public long Sequence { get; init; }
@@ -139,11 +178,15 @@ internal sealed class ChatListener : IDisposable
         if (!PlayerChannels.Contains(message.LogKind))
             return;
 
-        var sender = FormatSender(message.Sender);
+        var (sender, senderName) = FormatSender(message.Sender);
         ChatLine line;
         lock (_lock)
         {
-            line = new ChatLine(DateTime.Now, message.LogKind, sender, message.Message.TextValue) { Sequence = ++_lastSequence };
+            line = new ChatLine(DateTime.Now, message.LogKind, sender, message.Message.TextValue)
+            {
+                Sequence = ++_lastSequence,
+                SenderName = senderName,
+            };
             _lines.AddLast(line);
             while (_lines.Count > MaxLines)
                 _lines.RemoveFirst();
@@ -156,24 +199,25 @@ internal sealed class ChatListener : IDisposable
     /// <summary>
     /// 발신자 SeString 의 TextValue 는 이름과 서버 이름이 붙어 나온다 (게임은 그 사이에 서버 아이콘을 그린다).
     /// PlayerPayload 에서 이름·서버를 꺼내, 게임이 서버를 보여 준 경우(다른 서버 플레이어)만 '이름@서버' 로 만든다.
-    /// 이름 앞의 기호(파티 번호 등)는 그대로 둔다.
+    /// 이름 앞의 기호(파티 번호 등)는 그대로 둔다. 이름을 찾지 못하면 나눈 이름은 null 이다.
     /// </summary>
-    private string FormatSender(SeString sender)
+    private (string Text, SenderName? Name) FormatSender(SeString sender)
     {
         var text = sender.TextValue;
         var player = sender.Payloads.OfType<PlayerPayload>().FirstOrDefault();
         if (player is null)
-            return text;
+            return (text, null);
 
         var name = player.PlayerName;
         _onPlayerName?.Invoke(name);
         var nameAt = text.IndexOf(name, StringComparison.Ordinal);
         if (nameAt < 0)
-            return text;
+            return (text, null);
 
         var prefix = text[..nameAt];
         var world = player.World.ValueNullable?.Name.ExtractText() ?? "";
         var worldShown = world.Length > 0 && text.AsSpan(nameAt + name.Length).Trim().EndsWith(world, StringComparison.Ordinal);
-        return worldShown ? $"{prefix}{name}@{world}" : $"{prefix}{name}";
+        var parts = new SenderName(prefix, name, worldShown ? world : null);
+        return (parts.Format(SenderNameStyle.Full), parts);
     }
 }

@@ -318,7 +318,7 @@ internal sealed class MainWindow : StyledWindow, IDisposable
         using (ImRaii.Group())
         {
             var text = headline is null ? line.Message : $"{Tag(headline)}{headline.Result}";
-            var first = $"[{line.Time:HH:mm}] {line.Sender}: {text}";
+            var first = $"[{line.Time:HH:mm}] {line.DisplaySender(config.SenderNameStyle)}: {text}";
             if (_channelColors.Get(line.Channel) is { } channelColor)
                 WrappedText.Draw(first, channelColor);
             else
@@ -510,7 +510,15 @@ internal sealed class MainWindow : StyledWindow, IDisposable
         DrawTranslateChannels(config);
     }
 
-    /// <summary>받은 채팅의 보이는 모양: 원문을 같이 보일지</summary>
+    private static readonly (SenderNameStyle Style, string Label)[] SenderNameStyles =
+    [
+        (SenderNameStyle.Full, "전체 이름 (Taro Yamada)"),
+        (SenderNameStyle.SurnameAbbreviated, "성 줄임 (Taro Y.)"),
+        (SenderNameStyle.ForenameAbbreviated, "이름 줄임 (T. Yamada)"),
+        (SenderNameStyle.Initials, "머리글자 (T. Y.)"),
+    ];
+
+    /// <summary>받은 채팅의 보이는 모양: 원문을 같이 보일지, 보낸 사람 이름을 줄일지</summary>
     private static void DrawChatDisplay(Configuration config)
     {
         var showOriginal = config.ShowOriginalText;
@@ -522,6 +530,27 @@ internal sealed class MainWindow : StyledWindow, IDisposable
         WrappedText.Draw(
             "끄면 번역한 줄은 원문 대신 번역문만 보입니다. 원문은 줄에 마우스를 올리면 볼 수 있습니다.",
             DimColor);
+
+        ImGuiHelpers.ScaledDummy(4);
+
+        ImGui.TextUnformatted("보낸 사람 이름");
+        var current = SenderNameStyles.FirstOrDefault(s => s.Style == config.SenderNameStyle);
+        ImGui.SetNextItemWidth(Layout.ComboWidth(SenderNameStyles.Select(s => s.Label)));
+        using (var combo = ImRaii.Combo("##senderNameStyle", current.Label ?? config.SenderNameStyle.ToString()))
+        {
+            if (combo.Success)
+            {
+                foreach (var (style, label) in SenderNameStyles)
+                {
+                    if (ImGui.Selectable(label, style == config.SenderNameStyle) && style != config.SenderNameStyle)
+                    {
+                        config.SenderNameStyle = style;
+                        config.Save();
+                    }
+                }
+            }
+        }
+        WrappedText.Draw("받은 채팅에 보이는 이름만 바뀝니다. 귓속말 답장에는 늘 전체 이름을 씁니다.", DimColor);
     }
 
     /// <summary>채팅 탭 목록 — 탭마다 접었다 펼 수 있는 편집 칸. 탭을 오른쪽 클릭한 메뉴와 같은 내용이다</summary>
