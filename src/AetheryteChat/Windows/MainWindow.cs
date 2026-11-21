@@ -261,6 +261,21 @@ internal sealed class MainWindow : StyledWindow, IDisposable
             DimColor);
     }
 
+    /// <summary>알트탭으로 돌아오면 한/영 상태를 되돌릴지</summary>
+    private static void DrawKeepImeMode(Configuration config)
+    {
+        var keep = config.KeepImeModeOnRefocus;
+        if (ImGui.Checkbox("게임에 돌아오면 한/영 상태 되돌리기", ref keep))
+        {
+            config.KeepImeModeOnRefocus = keep;
+            config.Save();
+        }
+        WrappedText.Draw(
+            "Windows 11 의 한국어 입력기는 알트탭으로 게임에 돌아올 때마다 영어로 바뀝니다. 켜 두면 게임을 떠나기 전의 " +
+            "한/영 상태로 되돌립니다.",
+            DimColor);
+    }
+
     private void DrawSettings()
     {
         var config = Owner.Configuration;
@@ -270,6 +285,10 @@ internal sealed class MainWindow : StyledWindow, IDisposable
         ImGuiHelpers.ScaledDummy(8);
 
         DrawFocusHotkey(config);
+
+        ImGuiHelpers.ScaledDummy(8);
+
+        DrawKeepImeMode(config);
 
         ImGuiHelpers.ScaledDummy(8);
 

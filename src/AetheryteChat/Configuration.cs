@@ -117,6 +117,12 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>단축키와 같이 누를 키: NO_KEY(없음)·CONTROL·SHIFT·MENU(Alt)</summary>
     public VirtualKey FocusInputModifier { get; set; } = VirtualKey.CONTROL;
 
+    /// <summary>
+    /// 알트탭 등으로 게임에 돌아오면 한/영 상태를 떠나기 전대로 되돌릴지 (<see cref="ImeModeKeeper"/>).
+    /// Windows 11 의 새 한국어 IME 가 돌아올 때마다 영어로 바꾸는 것을 막는다
+    /// </summary>
+    public bool KeepImeModeOnRefocus { get; set; } = true;
+
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 
     public const int CurrentVersion = 1;
