@@ -1,6 +1,7 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Keys;
+using Dalamud.Game.Text;
 using Dalamud.Interface;
 using Dalamud.Interface.ImGuiFontChooserDialog;
 using Dalamud.Interface.Utility;
@@ -71,6 +72,58 @@ internal sealed class MainWindow : StyledWindow, IDisposable
 
     private static string ChatTabMenuId(ChatTab tab) => $"##chatTabMenu{tab.Id:N}";
 
+    // 지난 프레임에 열려 있던 채팅 탭 (채팅 탭이 아닌 탭을 보고 있었으면 null)
+    private Guid? _activeChatTab;
+
+    // 채팅 탭마다 어디까지 봤는지 (ChatLine.Sequence). 탭을 열어 두면 받은 대로 늘어난다
+    private readonly Dictionary<Guid, long> _seenUpTo = [];
+
+    /// <summary>
+    /// 탭을 마지막으로 본 뒤 이 탭에 보일 채널로 새 대화가 왔는지. 내가 보낸 글은 세지 않는다.
+    /// 처음 보는 탭(플러그인을 켠 직후·새로 만든 탭)은 지금까지 받은 줄을 다 본 것으로 친다
+    /// </summary>
+    private bool HasUnread(ChatTab tab, IReadOnlyList<ChatLine> lines, long latest)
+    {
+        if (!_seenUpTo.TryGetValue(tab.Id, out var seen))
+        {
+            _seenUpTo[tab.Id] = latest;
+            return false;
+        }
+        for (var i = lines.Count - 1; i >= 0 && lines[i].Sequence > seen; i--)
+        {
+            var line = lines[i];
+            if (tab.Shows(line.Channel) && line.Channel != XivChatType.TellOutgoing && !line.IsOwnText)
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// 탭 이름표. 탭 ID(### 뒤)는 이름과 따로 둬 이름을 바꿔도 탭 선택이 풀리지 않게 한다.
+    /// 안 읽은 대화가 있으면 이름 뒤에 빈칸을 덧붙여 점(<see cref="DrawUnreadDot"/>)이 들어갈 자리를 만든다
+    /// </summary>
+    private static (string Text, bool Unread) ChatTabLabel(ChatTab tab, bool unread)
+    {
+        var pad = unread ? new string(' ', (int)MathF.Ceiling(UnreadDotRoom / Layout.TextWidth(" "))) : "";
+        return ($"{ChatTabEditor.DisplayName(tab)}{pad}###chat{tab.Id:N}", unread);
+    }
+
+    private static float UnreadDotRadius => ImGui.GetFontSize() * 0.2f;
+
+    /// <summary>점이 차지하는 폭 (이름과의 간격 + 지름)</summary>
+    private static float UnreadDotRoom => ImGui.GetStyle().ItemInnerSpacing.X + UnreadDotRadius * 2;
+
+    /// <summary>바로 앞 탭의 오른쪽 안쪽(이름 뒤 빈칸 자리)에 안 읽은 대화 점을 그린다</summary>
+    private static void DrawUnreadDot()
+    {
+        var min = ImGui.GetItemRectMin();
+        var max = ImGui.GetItemRectMax();
+        var radius = UnreadDotRadius;
+        // 탭 오른쪽 안쪽 여백은 FramePadding.X + 1 (ImGui 1.88 TabItemCalcSize)
+        var center = new Vector2(max.X - ImGui.GetStyle().FramePadding.X - 1 - radius, (min.Y + max.Y) / 2);
+        ImGui.GetWindowDrawList().AddCircleFilled(center, radius, ImGui.GetColorU32(UnreadColor));
+    }
+
     private const string AddChatTabLabel = "+##addChatTab";
 
     /// <summary>오른쪽 끝에 붙이는 탭 (그리는 순서대로)</summary>
@@ -121,20 +174,26 @@ internal sealed class MainWindow : StyledWindow, IDisposable
             ? config.ChatTabs.FirstOrDefault(t => t.Id == _lastChatTab) ?? config.ChatTabs.FirstOrDefault()
             : null;
         ChatTab? openMenu = null;
+        var lines = Owner.ChatListener.Snapshot();
+        var latest = lines.Count > 0 ? lines[^1].Sequence : 0;
+        var activeLastFrame = _activeChatTab;
+        _activeChatTab = null;
         // 메뉴에서 탭을 지우거나 옮겨도 이번 프레임은 그리던 목록 그대로 그린다
-        foreach (var chatTab in config.ChatTabs.ToArray())
+        var chatTabs = config.ChatTabs.Select(t => (Tab: t, Label: ChatTabLabel(t, t.Id != activeLastFrame && HasUnread(t, lines, latest)))).ToArray();
+        foreach (var (chatTab, label) in chatTabs)
         {
             var select = chatTab.Id == _selectChatTab || chatTab == focusTab;
-            // 탭 ID(### 뒤)는 이름과 따로 둬 이름을 바꿔도 탭 선택이 풀리지 않게 한다
-            using var tab = ImRaii.TabItem(
-                $"{ChatTabEditor.DisplayName(chatTab)}###chat{chatTab.Id:N}",
-                select ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None);
+            using var tab = ImRaii.TabItem(label.Text, select ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None);
+            if (label.Unread)
+                DrawUnreadDot();
             if (ImGui.IsItemClicked(ImGuiMouseButton.Right))
                 openMenu = chatTab;
             if (tab.Success)
             {
                 _lastChatTab = chatTab.Id;
-                DrawChat(chatTab, sendBelow);
+                _activeChatTab = chatTab.Id;
+                _seenUpTo[chatTab.Id] = latest;
+                DrawChat(chatTab, sendBelow, lines);
             }
         }
         _selectChatTab = null;
@@ -150,7 +209,7 @@ internal sealed class MainWindow : StyledWindow, IDisposable
 
         // 번역 도구·설정·스타일은 오른쪽 끝에 붙인다 — 왼쪽은 채팅 탭들이 쓴다.
         // Trailing 은 탭이 넘칠 때 맨 뒤에 고정할 뿐 남는 폭이 있으면 앞 탭 바로 뒤에 붙으므로, 사이를 빈 탭으로 채운다
-        var leftLabels = config.ChatTabs.Select(t => ChatTabEditor.DisplayName(t)).Append(AddChatTabLabel);
+        var leftLabels = chatTabs.Select(t => t.Label.Text).Append(AddChatTabLabel);
         DrawTabSpacer(barWidth, leftLabels.Concat(RightTabLabels).ToList());
 
         var engineTabFlags = ImGuiTabItemFlags.Trailing | (_selectEngineTab ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None);
@@ -188,7 +247,7 @@ internal sealed class MainWindow : StyledWindow, IDisposable
             ImGui.CloseCurrentPopup();
     }
 
-    private void DrawChat(ChatTab chatTab, bool sendBelow)
+    private void DrawChat(ChatTab chatTab, bool sendBelow, IReadOnlyList<ChatLine> lines)
     {
         var queue = Owner.TranslationQueue;
 
@@ -211,7 +270,7 @@ internal sealed class MainWindow : StyledWindow, IDisposable
         using (var child = ImRaii.Child("##log", new Vector2(0, sendBelow ? -_sendPanelHeight : 0), true))
         {
             if (child.Success)
-                DrawLog(chatTab);
+                DrawLog(chatTab, lines);
         }
 
         if (sendBelow)
@@ -223,12 +282,12 @@ internal sealed class MainWindow : StyledWindow, IDisposable
     }
 
     /// <summary>받은 채팅 가운데 이 탭에 보일 채널의 줄만 그린다</summary>
-    private void DrawLog(ChatTab chatTab)
+    private void DrawLog(ChatTab chatTab, IReadOnlyList<ChatLine> lines)
     {
         if (chatTab.HiddenChannels.Count >= TranslateChannels.Groups.Length)
             WrappedText.Draw("이 탭에 보일 채널이 없습니다. 탭 이름을 오른쪽 클릭해 보일 채널을 고르세요.", DimColor);
 
-        foreach (var line in Owner.ChatListener.Snapshot())
+        foreach (var line in lines)
         {
             if (!chatTab.Shows(line.Channel))
                 continue;

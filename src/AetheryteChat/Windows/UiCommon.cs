@@ -11,6 +11,9 @@ internal static class UiCommon
     public static readonly Vector4 DimColor = new(0.6f, 0.6f, 0.6f, 1f);
     public static readonly Vector4 ErrorColor = new(1f, 0.5f, 0.4f, 1f);
 
+    /// <summary>안 읽은 대화가 있는 채팅 탭의 점</summary>
+    public static readonly Vector4 UnreadColor = new(1f, 0.62f, 0.2f, 1f);
+
     /// <summary>
     /// 엔진 상태를 바로 앞 컨트롤 옆에 그린다. 자리가 모자라면 다음 줄에 줄바꿈해서 그린다.
     /// rightAlign 이면 그 줄의 오른쪽 끝에 붙인다.

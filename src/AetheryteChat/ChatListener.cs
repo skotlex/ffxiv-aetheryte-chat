@@ -56,6 +56,9 @@ internal sealed class ChatLine(DateTime time, XivChatType channel, string sender
     public string Sender { get; } = sender;
     public string Message { get; } = message;
 
+    /// <summary>받은 순번 (1부터 늘어난다). 탭마다 어디까지 봤는지 적어 안 읽은 대화를 가린다</summary>
+    public long Sequence { get; init; }
+
     private readonly Lock _lock = new();
     private LineTranslation[] _translations = []; // 더할 때마다 새 배열로 바꿔 끼워, 읽는 쪽은 잠그지 않는다
 
@@ -102,6 +105,7 @@ internal sealed class ChatListener : IDisposable
     private readonly Action<string>? _onPlayerName;
     private readonly Lock _lock = new();
     private readonly LinkedList<ChatLine> _lines = new();
+    private long _lastSequence; // 지워도 되돌리지 않는다 — 탭마다 적어 둔 '어디까지 봤는지' 가 어긋나지 않게
 
     /// <param name="onLine">새 줄이 들어올 때 게임 스레드에서 불린다. 오래 걸리는 일을 하면 안 된다.</param>
     /// <param name="onPlayerName">보낸 사람의 이름('이름 성', 서버 빼고)을 알게 될 때 게임 스레드에서 불린다 (표본 기록의 이름 가리기)</param>
@@ -135,15 +139,17 @@ internal sealed class ChatListener : IDisposable
         if (!PlayerChannels.Contains(message.LogKind))
             return;
 
-        var line = new ChatLine(DateTime.Now, message.LogKind, FormatSender(message.Sender), message.Message.TextValue);
-        if (message.LogKind == XivChatType.TellIncoming)
-            LastTellSender = line.Sender;
+        var sender = FormatSender(message.Sender);
+        ChatLine line;
         lock (_lock)
         {
+            line = new ChatLine(DateTime.Now, message.LogKind, sender, message.Message.TextValue) { Sequence = ++_lastSequence };
             _lines.AddLast(line);
             while (_lines.Count > MaxLines)
                 _lines.RemoveFirst();
         }
+        if (message.LogKind == XivChatType.TellIncoming)
+            LastTellSender = line.Sender;
         _onLine(line);
     }
 
